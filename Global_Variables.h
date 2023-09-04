@@ -57,6 +57,10 @@ byte CountCE[21];
 // Предыдущее состояние
 uint32_t PrevCE;
 
+#ifdef TM1637_ENABLE
+	TM1637Display Display7S(TM1637_CLK_PIN, TM1637_DIO_PIN);
+#endif
+
 // Спекцсимволы в пакете данных
 #define FOBEGIN  0x40       // '@'  Начало исходящего пакета
 #define FIOEND   0x0D       // '\r' Конец пакета

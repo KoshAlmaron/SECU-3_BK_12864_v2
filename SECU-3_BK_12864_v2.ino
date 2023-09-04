@@ -60,6 +60,13 @@
 					* Температура воздуха на впуске (F),
 					* Средний расход топлива суточный (F),
 					* Средний расход топлива общий (F).
+	2021-10-15 - Добавил анимацию включения для дисплея TM1637.
+				- Добавил возможность выбора данных для отображения для TM1637:
+					* Обороты,
+					* EGT,
+					* AFR,
+					* Загрузка форсунок,
+					* ДАД.
 
 	
 ==================================================================================================
@@ -131,6 +138,7 @@
 //#define EEPROM_CLEAR_ON_START
 
 // Настройка LCD дисплея
+#define SPI_RS_PIN 10
 U8G2_ST7920_128X64_F_HW_SPI u8g2(U8G2_R0, SPI_RS_PIN);
 
 //=============================================================================
@@ -819,16 +827,34 @@ void draw_air_map_index_f(byte x, byte y) {
 	u8g2.drawUTF8(41 - 3 - L + x, y + 10 + H/2, CharVal);
 }
 
-
 // Обороты на дополнительном сегментном дисплее
-void draw_rpm_tm1637() {
-	int RPM = build_int(1);
-	RPM = constrain(RPM, 0, 9999);
-	RPM = trunc(RPM * 0.1) * 10;
-	TM1637Display display(TM1637_CLK_PIN, TM1637_DIO_PIN);
-	display.setBrightness(TM1637_BRIGHTNESS);
-	display.showNumberDec(RPM, false);
+#ifdef TM1637_ENABLE
+void draw_tm1637() {
+	#if TM1637_DATA_TYPE==0 
+		int Value = build_int(1); // 0 - Обороты
+		Value = constrain(Value, 0, 9999);
+		Value = trunc(Value * 0.1) * 10;
+		Display7S.showNumberDec(Value, false);
+	#elif TM1637_DATA_TYPE==1
+		int Value = build_int(77) * 0.25; // 1 - EGT
+		Value = constrain(Value, 0, 1999);
+		Value = trunc(Value * 0.1) * 10;
+		Display7S.showNumberDec(Value, false);
+	#elif TM1637_DATA_TYPE==2
+		int Value = build_int(60 + DataShift) * 0.078125; // 2 - AFR
+		Value = constrain(Value, 0, 33);
+		display.showNumberDecEx(Value, 0x80 >> 2, false);
+	#elif TM1637_DATA_TYPE==3
+		int Value = Data[81] * 0.5; // 3 - Загрузка форсунок
+		Value = constrain(Value, 0, 100);
+		Display7S.showNumberDec(Value, false);
+	#elif TM1637_DATA_TYPE==4
+		int Value = (float) build_int(3) * 0.015625; // 4 - ДАД
+		Value = constrain(Value, 0, 333);
+		Display7S.showNumberDec(Value, false);
+	#endif
 }
+#endif
 
 //=============================================================================
 //===================== Функциия отрисовки экранов ============================
@@ -840,13 +866,70 @@ void draw_init(byte x, byte y) {
 	u8g2.drawXBMP(x, y, Trollface_width, Trollface_height, Trollface_bits);
 	u8g2.sendBuffer();
 
-	for (byte i = MIN_BRIGHT; i <= min(Bright, MIN_BRIGHT + 45); i++) {
-		delay(50);
-		analogWrite(BRIGHT_PIN, i);
-	}
+	#ifdef TM1637_ENABLE
+		#define STEP_DELAY 125
+		#define LCD_BRIGHT_STEP 4
 
-	lcd_main();
+		byte LCDBright = MIN_BRIGHT;
+		byte Data[4];
+		byte Segment[] = {0b00000001,
+							0b00000011,
+							0b00000111,
+							0b00001111,
+							0b00011110,
+							0b00111100,
+							0b00111001,
+							0b00110001,
+							0b00100001,
+							0b00000001,
+							0b00000000};
+
+		byte Brightness = 0;
+		Display7S.setBrightness(Brightness);
+		Display7S.clear();
+		
+		for (byte i = 0; i < 10; i++) {
+			for (byte k = 0; k < 4; k++) {
+				Data[k] = Segment[i];
+			}
+			delay(STEP_DELAY);
+			Brightness = min(7, Brightness + i / 2);
+			Display7S.setBrightness(Brightness);
+			Display7S.setSegments(Data);
+
+			LCDBright = min(255, LCDBright + LCD_BRIGHT_STEP);
+			analogWrite(BRIGHT_PIN, LCDBright);
+		}
+		delay(STEP_DELAY);
+		for (byte i = 0; i < 3; i++) {
+			Data[i] = 0b00000000;
+			Display7S.setSegments(Data);
+			delay(STEP_DELAY);
+
+			LCDBright = min(255, LCDBright + LCD_BRIGHT_STEP);
+			analogWrite(BRIGHT_PIN, LCDBright);
+		}
+
+		for (byte i = 0; i < 5; i++) {
+			Data[3] = Data[3] << 1;
+			Data[3] += 1;
+			Display7S.setSegments(Data);
+			delay(STEP_DELAY);
+
+			LCDBright = min(255, LCDBright + LCD_BRIGHT_STEP);
+			analogWrite(BRIGHT_PIN, LCDBright);
+		}
+		Display7S.setBrightness(TM1637_BRIGHTNESS);
+
+	#else
+		for (byte i = MIN_BRIGHT; i <= min(Bright, MIN_BRIGHT + 45); i++) {
+			delay(50);
+			analogWrite(BRIGHT_PIN, i);
+		}
+	#endif
+
 	analogWrite(BRIGHT_PIN, Bright);
+	lcd_main();
 }
 
 // Основной экран
@@ -1164,6 +1247,33 @@ void lcd_ce_errors() {
 //=============================================================================
 //============================== Основные функции  ============================
 //=============================================================================
+
+// Чтеение EEPROM
+void read_eeprom() {
+	for (byte i = 0; i < 4; i++ ) {
+		byte *pValue = (byte*)&Distance;
+		*(pValue + i) = EEPROM.read(i); 
+	}
+	Distance = min(9999.9, Distance);
+
+	for (byte i = 0; i < 4; i++ ) {
+		byte *pValue = (byte*)&DistanceAll;
+		*(pValue + i) = EEPROM.read(i + 4); 
+	}
+	DistanceAll = min(999999.0, DistanceAll);
+	
+	for (byte i = 0; i < 4; i++ ) {
+		byte *pValue = (byte*)&FuelBurned;
+		*(pValue + i) = EEPROM.read(i + 8); 
+	}
+	FuelBurned = min(999.0, FuelBurned);
+	
+	for (byte i = 0; i < 4; i++ ) {
+		byte *pValue = (byte*)&FuelBurnedAll;
+		*(pValue + i) = EEPROM.read(i + 12); 
+	}
+	FuelBurnedAll = min(9999.0, FuelBurnedAll);
+}
 
 // Запись EEPROM
 void write_eeprom() {
@@ -1513,30 +1623,8 @@ void setup() {
 	pinMode(ENCODER_PIN_C, INPUT_PULLUP);
 
 	// Считываем данные из EEPROM
-	for (byte i = 0; i < 4; i++ ) {
-		byte *pValue = (byte*)&Distance;
-		*(pValue + i) = EEPROM.read(i); 
-	}
-	Distance = min(9999.9, Distance);
-
-	for (byte i = 0; i < 4; i++ ) {
-		byte *pValue = (byte*)&DistanceAll;
-		*(pValue + i) = EEPROM.read(i + 4); 
-	}
-	DistanceAll = min(999999.0, DistanceAll);
-	
-	for (byte i = 0; i < 4; i++ ) {
-		byte *pValue = (byte*)&FuelBurned;
-		*(pValue + i) = EEPROM.read(i + 8); 
-	}
-	FuelBurned = min(999.0, FuelBurned);
-	
-	for (byte i = 0; i < 4; i++ ) {
-		byte *pValue = (byte*)&FuelBurnedAll;
-		*(pValue + i) = EEPROM.read(i + 12); 
-	}
-	FuelBurnedAll = min(9999.0, FuelBurnedAll);
-	
+	read_eeprom();
+		
 	// Управление подсветкой.
 	Bright = EEPROM.read(20);
 	if (Bright < MIN_BRIGHT) {
@@ -1559,12 +1647,6 @@ void setup() {
 	// Режим XOR при отрисовке текста
 	u8g2.setDrawColor(2);
 
-	#ifdef SHOW_RPM_TM1637
-		TM1637Display display(TM1637_CLK, TM1637_DIO);
-		display.setBrightness(TM1637_BRIGHTNESS);
-		display.showNumberDec(0, false);
-	#endif
-	
 	#ifdef EEPROM_CLEAR_ON_START
 		for (int i = 0; i < EEPROM.length(); i++) {
 			EEPROM.write(i, 0);
@@ -1592,16 +1674,17 @@ void loop_2() {
 	build_data();
 	check_ce_errors();
 
-	#ifdef DEBUG_MODE
-		//DataOk = 1;
-		LCDMode = 1;
-	#endif
-
 	if (abs(EncoderState) == 4) {
 		Bright = max(MIN_BRIGHT, min(255, Bright + EncoderState / abs(EncoderState) * BRIGHT_STEP));
 		analogWrite(BRIGHT_PIN, Bright);
 		EncoderState = 0;
 	}
+
+	#ifdef DEBUG_MODE
+		DataOk = 1;
+		//Serial.println(Bright);
+		//LCDMode = 1;
+	#endif
 }
 
 // Основной цикл
@@ -1638,8 +1721,8 @@ void loop() {
 			else if (LCDMode == 2) {lcd_acceleration();}
 			else if (LCDMode == 3) {lcd_ce_errors();}
 
-			#ifdef SHOW_RPM_TM1637
-				draw_rpm_tm1637();
+			#ifdef TM1637_ENABLE
+				draw_tm1637();
 			#endif
 		}
 	}
