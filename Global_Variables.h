@@ -18,8 +18,6 @@ byte DataShift = 0;
 // Таймер для изменения яркости
 unsigned long BrightTimer = 0;
 
-// Состояние замка зажигания, 0 - выключено, 1 - включено
-byte PowerState = 0;
 // Режим подсветки, 0 - день, 1 - ночь
 byte BrightMode = 0;
 
@@ -35,10 +33,13 @@ char AlarmBoxState = 0;
 // ШИМ подсветка приборной панели.
 byte BrightPWM[3];
 
-// Пройденное расстояние в км
+// Пройденное расстояние в км за время работы
 float DIST = 0.0;       // (29-31)  Дистанция
 
-// Переменные расчета и для хранения пробега и израсходованного топлива
+// Израсходованно топлива за поездку в мл
+float FuelBurnedRide = 0.0;
+
+// Переменные расчета и для хранения пробега и израсходованного топлива (в мл)
 unsigned long FuelTimer = 0;
 float PrevFF_FRQ = 0.0;
 // Суточные
@@ -53,11 +54,11 @@ unsigned long EngineHours = 0;
 // Таймер для моточасов
 unsigned long EngineTimer = 0;
 
-// Переменные для экрана завершения
 // Время работы за поездку
 unsigned long RideTimer = 0;
-// Израсходованно топлива за поездку
-float FuelBurnedRide = 0.0;
+
+// Уровень топлива
+float FuelTankLevel = 0.0;
 
 // Энкодер
 char EncoderState = 0;

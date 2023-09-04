@@ -84,9 +84,18 @@
 	2021-11-08 - Добавил экран завершения.
 	2021-11-11 - Уменьшил количество использованных шрифтов, это осовободило 2,5 КБ flash памяти.
 				- Исправил несколько ошибок в коде новых функций.
+	2021-11-21 - Добавил управления питанием, после завершения БК сам себя выключает через MOSFET.
+	2021-11-27 - Изменил расчет израсходованного топлива, теперь топливо учитывается в мл,
+					Так как расчет топлива происходил на пределе точности float.
+	2021-11-28 - Исправил расчет средней скорости на экране завершения.
+	2021-12-01 - Добавил буфер уровня топлива, настраивается с помощью FUEL_TANK_LEVEL_AVG.
+				- Экран завершения отображается только если пройдено больше 100м.
 
 	ПЛАН:
-	 - Экран при выключенном зажигании,
+	 - Не отображать экран завершения, если двигатель не запускался. 2021-12-01
+	 - Переделать расчет израсходованного топлива, 2021-11-27
+	 - Буфер уровня топлива, 2021-12-01
+	 - Аварийный уровень топлива,
 	 - Дисплей на MAX7219.
 */
 
@@ -108,6 +117,16 @@
 //#define DEBUG_MODE
 // Номер экрана при запуске в режиме отладки
 #define LCD_MODE_ON_START 0
+
+
+// Запись значений пробега и расхода, если случайно затер или при замене Arduino.
+// Расход топлива храниться в мл, потому надо умножать литры на 1000.
+// Раскомментировать, прошить, закомментировать и прошить.
+//#define WRITE_EEPROM_ON_START
+#define WRITE_DISTANCE_DAY 84.2
+#define WRITE_DISTANCE_ALL 6830.0
+#define WRITE_FUEL_BURNED_DAY 9.3 * 1000.0
+#define WRITE_FUEL_BURNED_ALL 545.0 * 1000.0
 
 //=============================================================================
 //=============================== СБРОС EEPROM  ===============================
@@ -133,11 +152,11 @@
 // Настройка LCD дисплея
 
 // Обычный на чипе ST7920
-//U8G2_ST7920_128X64_F_HW_SPI u8g2(U8G2_R0, SPI_CS_RS_PIN);
+//U8G2_ST7920_128X64_F_HW_SPI u8g2(U8G2_R0, SPI_CS_PIN);
 // OLED 1.3" на чипе SH1106 (stasoks)
-//U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, SPI_CS_RS_PIN, SPI_DC_PIN, SPI_RS_PIN);
+//U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, SPI_CS_PIN, SPI_DC_PIN, SPI_RS_PIN);
 // OLED 2.42" на чипе SSD1309
-U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI u8g2(U8G2_R0, SPI_CS_RS_PIN, SPI_DC_PIN);
+U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI u8g2(U8G2_R0, SPI_CS_PIN, SPI_DC_PIN);
 
 //=============================================================================
 //===================== Функциия отрисовки экранов ============================
@@ -197,11 +216,11 @@ void draw_init() { // 20
 			if (j < 32) {
 
 				#ifdef PWM_BRIGHT_PIN
-					analogWrite(PWM_BRIGHT_PIN, PWM_BRIGHT_MIN + j * BrightStepPWM);
+					analogWrite(PWM_BRIGHT_PIN, min(255, PWM_BRIGHT_MIN + j * BrightStepPWM));
 				#endif
 				
 				#ifdef LCD_BRIGHT_PIN
-					analogWrite(LCD_BRIGHT_PIN, LCD_BRIGHT_MIN + j * BrightStepLCD);
+					analogWrite(LCD_BRIGHT_PIN, min(255, LCD_BRIGHT_MIN + j * BrightStepLCD));
 				#else
 					u8g2.setContrast(j * BrightStepLCD);
 				#endif
@@ -277,7 +296,7 @@ void draw_finish() {
 	#define ROW_SHIFT 5
 	//RideTimer = 600001;
 	//DIST = 12.15;
-	//FuelBurnedRide = 2.2;
+	//FuelBurnedRide = 2200;
 
 	char CharVal[7];
 	byte Row;
@@ -289,8 +308,7 @@ void draw_finish() {
 	u8g2.clearBuffer();
 	// Строка 1 - Время поездки в минутах
 	Row = 1;
-	float TimeM = (float) RideTimer / 60;
-	dtostrf(TimeM, 6, 1, CharVal);
+	dtostrf(RideTimer / 60.0, 6, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.setCursor(1, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT);
 	u8g2.print(F("Travel Time"));
@@ -306,7 +324,7 @@ void draw_finish() {
 
 	// Строка 3 - Израсходовано топлива
 	Row = 3;
-	dtostrf(FuelBurnedRide, 5, 1, CharVal);
+	dtostrf(FuelBurnedRide / 1000.0, 5, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.setCursor(1, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT);
 	u8g2.print(F("Fuel Consumed"));
@@ -315,7 +333,7 @@ void draw_finish() {
 	// Строка 4 - Средняя скорость
 	Row = 4;
 	float AVGSpeed = 0;
-	if (TimeM) {AVGSpeed = (float) DIST * (60 / TimeM);}
+	if (RideTimer) {AVGSpeed = (float) DIST / (RideTimer / 3600.0);}
 	dtostrf(AVGSpeed, 5, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.setCursor(1, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT);
@@ -938,12 +956,12 @@ void draw_afc_f(byte x, byte y) { // 17
 
 	// Средний расход суточный
 	if (Distance + DIST > 1) {
-		AFC = FuelBurned / (Distance + DIST) * 100;
+		AFC = (FuelBurned + FuelBurnedRide) / (Distance + DIST) * 0.1;
 		AFC = constrain(AFC, 0, 99.9);
 	}
 	// Средний расход общий
 	if (DistanceAll + DIST > 1) {
-		TAFC = FuelBurnedAll / (DistanceAll + DIST) * 100;
+		TAFC = (FuelBurnedAll + FuelBurnedRide) / (DistanceAll + DIST) * 0.1;
 		TAFC = constrain(TAFC, 0, 99.9);
 	}
 
@@ -968,7 +986,7 @@ void draw_afc_daily_f(byte x, byte y) { // 13
 
 	// Средний расход суточный
 	if (Distance + DIST > 1) {
-		AFC = FuelBurned / (Distance + DIST) * 100;
+		AFC = (FuelBurned + FuelBurnedRide) / (Distance + DIST) * 0.1;
 		AFC = constrain(AFC, 0, 99.9);
 	}
 
@@ -989,7 +1007,7 @@ void draw_afc_total_f(byte x, byte y) { // 13
 
 	// Средний расход общий
 	if (DistanceAll + DIST > 1) {
-		TAFC = FuelBurnedAll / (DistanceAll + DIST) * 100;
+		TAFC = (FuelBurnedAll + FuelBurnedRide) / (DistanceAll + DIST) * 0.1;
 		TAFC = constrain(TAFC, 0, 99.9);
 	}
 
@@ -1196,11 +1214,11 @@ void draw_fuel_burned_f(byte x, byte y) { // 10
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
-	dtostrf(FuelBurned, 5, 1, CharVal);
+	dtostrf((FuelBurned + FuelBurnedRide) / 1000.0, 5, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(41 - 1 - L + x, y + H + 2, CharVal);
 
-	dtostrf(FuelBurnedAll, 5, 0, CharVal);
+	dtostrf((FuelBurnedAll + FuelBurnedRide) / 1000.0, 5, 0, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(41 - 1 - L + x, y + H * 2 + 5, CharVal);
 }
@@ -1248,13 +1266,11 @@ void draw_rpm_f(byte x, byte y) { // 11
 }
 
 void draw_fuel_tank_f(byte x, byte y) { // 12
-	float FTLS = (float) build_int(75) * 0.015625;            // 64
-	FTLS = constrain(FTLS, 0, 333);
 	byte H;
 	byte L;
 	char CharVal[4];
 	if (AlarmBoxState > 0) {
-		if (FTLS < FUEL_TANK_MIN) {
+		if (FuelTankLevel < FUEL_TANK_MIN) {
 			u8g2.drawBox(x + 1, y + 1, 40, 19);
 		}
 	}
@@ -1263,7 +1279,7 @@ void draw_fuel_tank_f(byte x, byte y) { // 12
 	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
 	H = u8g2.getAscent();
 
-	dtostrf(FTLS, 3, 0, CharVal);
+	dtostrf(FuelTankLevel, 3, 0, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(41 - 3 - L + x, y + 10 + H/2, CharVal);
 }
@@ -1415,10 +1431,10 @@ void read_eeprom() { // 1
 	DistanceAll = min(999999.0, DistanceAll);
 	// Топливо суточный	
 	EEPROM.get(8, FuelBurned); // 8-11
-	FuelBurned = min(999.0, FuelBurned);
+	FuelBurned = min(999000.0, FuelBurned);
 	// Топливо всего
 	EEPROM.get(12, FuelBurnedAll); // 12-15
-	FuelBurnedAll = min(9999.0, FuelBurnedAll);
+	FuelBurnedAll = min(9999000.0, FuelBurnedAll);
 	// Моточасы
 	EEPROM.get(16, EngineHours); // 16-19
 	EngineHours = min(35996400, EngineHours); // 9999 * 3600
@@ -1437,7 +1453,7 @@ void read_eeprom() { // 1
 }
 
 // Запись EEPROM
-void write_eeprom() { // 9
+void write_eeprom() { // 16
 	#ifdef DEBUG_MODE
 		Serial.println(F("Write EEPROM"));
 	#endif
@@ -1445,19 +1461,24 @@ void write_eeprom() { // 9
 	float Dst = Distance + DIST;
 	float DstAll = DistanceAll + DIST;
 
-	//Dst = 60;
-	//DstAll = 6333;
-	//FuelBurned = 6.2;
-	//FuelBurnedAll = 500;
+	float Fuel = FuelBurned + FuelBurnedRide;
+	float FuelAll = FuelBurnedAll + FuelBurnedRide;
+
+	#ifdef WRITE_EEPROM_ON_START
+		Dst = WRITE_DISTANCE_DAY;
+		DstAll = WRITE_DISTANCE_ALL;
+		Fuel = WRITE_FUEL_BURNED_DAY;
+		FuelAll = WRITE_FUEL_BURNED_ALL;
+	#endif
 
 	// Пробег суточный
 	EEPROM.put(0, Dst); // 0-3
 	//	Пробег общий
 	EEPROM.put(4, DstAll); // 4-7
 	// Топливо суточный
-	EEPROM.put(8, FuelBurned); // 8-11
+	EEPROM.put(8, Fuel); // 8-11
 	// Топливо всего
-	EEPROM.put(12, FuelBurnedAll); // 12-15
+	EEPROM.put(12, FuelAll); // 12-15
 	// Моточасы
 	EEPROM.put(16, EngineHours); // 16-19
 
@@ -1630,15 +1651,12 @@ void build_data() { // 12
 			float FF_FRQ = (float) build_int(32 + DataShift) * 0.00390625;  // 256
 			FF_FRQ = constrain(FF_FRQ, 0, 256);
 
-			float FFAVG = (float) (PrevFF_FRQ + FF_FRQ) * 0.1125; // Расход л/ч (3600 / 16000) / 2
-			float FuelAdd = (float) FFAVG * ((millis() - FuelTimer) / 3600000);
+			// Усредненый мгновенный расход в мл/ч
+			float FFAVG = (float) (PrevFF_FRQ + FF_FRQ) * 112.5; // (3600 / 16) / 2
+			FuelBurnedRide += (float) (FFAVG * (millis() - FuelTimer)) / 3600000.0;
 
-			FuelBurnedRide += FuelAdd;
-			FuelBurned += FuelAdd;
-			FuelBurnedAll += FuelAdd;
-
-			FuelTimer = millis();
 			PrevFF_FRQ = FF_FRQ;
+			FuelTimer = millis();
 		}
 
 		// Подсчет моточасов
@@ -1652,6 +1670,12 @@ void build_data() { // 12
 				EngineHours += 1;
 				RideTimer += 1;
 			}
+
+			// Уровень топлива в баке с усреднением
+			float FTLS = (float) build_int(75) * 0.015625;            // 64
+			FTLS = constrain(FTLS, 0, 333);
+			FuelTankLevel = (FuelTankLevel * (FUEL_TANK_LEVEL_AVG - 1) + FTLS) / FUEL_TANK_LEVEL_AVG;
+
 			EngineTimer = millis();
 		}
 	}
@@ -1769,51 +1793,49 @@ void encoder_update() { // 2
 
 // Колокольчик AE86
 #ifdef SPEED_CHIME_PIN
-void speed_chime() { // 4
-	float SPD = 0.0;
-	SPD = build_speed(27 + DataShift);
+	void speed_chime() { // 4
+		float SPD = 0.0;
+		SPD = build_speed(27 + DataShift);
 
-	//SPD = 101;
+		//SPD = 101;
 
-	if (SpeedChimeStatus == 1) {
-		if (millis() - SpeedChimeTimer >= SPEED_CHIME_DELAY) {
-			digitalWrite(SPEED_CHIME_PIN, LOW);
-			SpeedChimeTimer = millis();
-			SpeedChimeStatus = 2;
+		if (SpeedChimeStatus == 1) {
+			if (millis() - SpeedChimeTimer >= SPEED_CHIME_DELAY) {
+				digitalWrite(SPEED_CHIME_PIN, LOW);
+				SpeedChimeTimer = millis();
+				SpeedChimeStatus = 2;
+			}
+		}
+		else if (SpeedChimeStatus == 2) {
+			if (millis() - SpeedChimeTimer >= SPEED_CHIME_INTERVAL) {
+				SpeedChimeStatus = 0;
+			}
+		}
+
+		if (SpeedChimeStatus == 0) {
+			if (SPD > SPEED_CHIME_LIMIT) {
+				digitalWrite(SPEED_CHIME_PIN, HIGH);
+				SpeedChimeTimer = millis();
+				SpeedChimeStatus = 1;
+			}
 		}
 	}
-	else if (SpeedChimeStatus == 2) {
-		if (millis() - SpeedChimeTimer >= SPEED_CHIME_INTERVAL) {
-			SpeedChimeStatus = 0;
-		}
-	}
-
-	if (SpeedChimeStatus == 0) {
-		if (SPD > SPEED_CHIME_LIMIT) {
-			digitalWrite(SPEED_CHIME_PIN, HIGH);
-			SpeedChimeTimer = millis();
-			SpeedChimeStatus = 1;
-		}
-	}
-}
 #endif
 
-// Прерывание на включение замка зажигания
+// Запуск БК
 void power_on() {
 	#ifdef DEBUG_MODE
 		Serial.println(F("Power On"));
 	#endif
 
-	PowerState = 1;
-	RideTimer = 0;
-	FuelBurnedRide = 0.0;
-
 	// Установка яркости
 	BrightLCD[2] = BrightLCD[BrightMode];
 	BrightPWM[2] = BrightPWM[BrightMode];
 
-	if (BrightMode == 1) {TM1637Bright = TM1637_BRIGHT_NIGHT * TM1637_BRIGHT_STEP;}
-	else {TM1637Bright = TM1637_BRIGHT_DAY * TM1637_BRIGHT_STEP;}
+	#ifdef TM1637_ENABLE
+		if (BrightMode == 1) {TM1637Bright = TM1637_BRIGHT_NIGHT * TM1637_BRIGHT_STEP;}
+		else {TM1637Bright = TM1637_BRIGHT_DAY * TM1637_BRIGHT_STEP;}
+	#endif
 
 	// Отображение экрана приветствия
 	draw_init();
@@ -1825,13 +1847,14 @@ void power_off() {
 		Serial.println(F("Power Off"));
 	#endif
 
-	PowerState = 0;
 	write_eeprom();
 	LCDMode = 0;
 
-	// Экран завершения
-	draw_finish();
-	delay(FINISH_SCREEN_TIME * 1000);
+	// Экран завершения, если пройдено больше 100м
+	if (DIST > 0.1) {
+		draw_finish();
+		delay(FINISH_SCREEN_TIME * 1000);
+	}
 
 	// Шаг изменения подсветки экрана
 	byte BrightStepLCD = (BrightLCD[BrightMode] - LCD_BRIGHT_MIN) / 31;
@@ -1844,11 +1867,15 @@ void power_off() {
 
 	for (byte i = 1; i < 32; i++) {
 		#ifdef PWM_BRIGHT_PIN
-			if (BrightPWM[2]) {BrightPWM[2] -= BrightStepPWM;}
+			if (BrightPWM[2]) {
+				BrightPWM[2] = max(0, BrightPWM[2] - BrightStepPWM);
+			}
 			analogWrite(PWM_BRIGHT_PIN, BrightPWM[2]);
 		#endif
 
-		if (BrightLCD[2]) {BrightLCD[2] -= BrightStepLCD;}
+		if (BrightLCD[2]) {
+			BrightLCD[2] = max(0, BrightLCD[2] - BrightStepLCD);
+		}
 		#ifdef LCD_BRIGHT_PIN
 			analogWrite(LCD_BRIGHT_PIN, BrightLCD[2]);
 		#else
@@ -1856,7 +1883,9 @@ void power_off() {
 		#endif
 
 		#ifdef TM1637_ENABLE
-			if (TM1637Bright) {TM1637Bright -= BrightStepTM1637;}
+			if (TM1637Bright) {
+				TM1637Bright = max(0, TM1637Bright - BrightStepTM1637);
+			}
 			byte Buffer = TM1637Bright / TM1637_BRIGHT_STEP;
 			Serial.println(Buffer);
 			Display7S.setBrightness(1);
@@ -1864,8 +1893,15 @@ void power_off() {
 
 		u8g2.clearBuffer();
 		u8g2.setClipWindow(0, i, 127, 63 - i);
-		// Заставка
-		draw_finish();
+		// Заставка, если пройдено больше 100м
+		if (DIST > 0.1) {
+			draw_finish();
+		}
+		else {
+			// или основной экран
+			lcd_main();
+		}
+
 		u8g2.sendBuffer();
 		delay(20);
 	}
@@ -1886,9 +1922,8 @@ void power_off() {
 		Display7S.clear();
 	#endif
 
-	while (!digitalRead(INT_POWER_PIN)) {
-		delay(250);
-	}
+	// Отключаем питание
+	digitalWrite(POWER_RELAY_PIN, LOW);
 }
 
 void power_n_light_status() {
@@ -1900,11 +1935,8 @@ void power_n_light_status() {
 		if (BrightMode == 1) {BrightMode = 0;}
 	}
 	// Проверки состояния замка зажигания
-	if (digitalRead(INT_POWER_PIN)) {
-		if (PowerState == 0) {power_on();}
-	}
-	else {
-		if (PowerState == 1) {power_off();}
+	if (!digitalRead(INT_IGN_PIN)) {
+		power_off();
 	}
 }
 
@@ -1912,10 +1944,10 @@ void lcd_bright_change() {
 	// Подсветка дисплея
 	if (BrightLCD[BrightMode] != BrightLCD[2]) {
 		if (BrightLCD[BrightMode] < BrightLCD[2]) {
-			BrightLCD[2] -= 2;
+			BrightLCD[2] = max(0, BrightLCD[2] - 2);
 		}
 		else if (BrightLCD[BrightMode] > BrightLCD[2]) {
-			BrightLCD[2] += 2;
+			BrightLCD[2] = min(255, BrightLCD[2] + 2);
 		}
 		#ifdef LCD_BRIGHT_PIN
 			analogWrite(LCD_BRIGHT_PIN, BrightLCD[2]);
@@ -1927,10 +1959,10 @@ void lcd_bright_change() {
 	#ifdef PWM_BRIGHT_PIN
 		if (BrightPWM[BrightMode] != BrightPWM[2]) {
 			if (BrightPWM[BrightMode] < BrightPWM[2]) {
-				BrightPWM[2] -= 1;
+				BrightPWM[2] = max(0, BrightPWM[2] - 1);
 			}
 			else if (BrightPWM[BrightMode] > BrightPWM[2]) {
-				BrightPWM[2] += 1;
+				BrightPWM[2] =  min(255, BrightPWM[2] + 1);
 			}
 			analogWrite(PWM_BRIGHT_PIN, BrightPWM[2]);
 		}
@@ -1979,10 +2011,16 @@ void draw_bright() {
 //=============================================================================
 // Инициализация при включении 
 void setup() { // 0
+	Serial.begin(SERIAL_PORT_SPEED);
+
 	// Вход для проверки состояния замка зажигания
-	pinMode(INT_POWER_PIN, INPUT_PULLUP);
+	pinMode(INT_IGN_PIN, INPUT);
 	// Вход для проверки состояния габаритов
-	pinMode(INT_LIGHT_PIN, INPUT_PULLUP);
+	pinMode(INT_LIGHT_PIN, INPUT);
+	// Выход управления питанием
+	pinMode(POWER_RELAY_PIN, OUTPUT);
+	// Сразу запитываемся от реле
+	digitalWrite(POWER_RELAY_PIN, HIGH);
 
 	// Настраиваем выводы для энкодера.
 	pinMode(BUTTON_UP_PIN, INPUT_PULLUP);
@@ -2000,23 +2038,26 @@ void setup() { // 0
 		pinMode(PWM_BRIGHT_PIN, OUTPUT);
 	#endif
 
-	// Очиста EEPROM
+	// Очистка EEPROM
 	#ifdef EEPROM_CLEAR_ON_START
 		for (int i = 0; i < EEPROM.length(); i++) {
 			EEPROM.write(i, 0);
 		}
 	#endif
 
+	// Запись значений пробега и расхода
+	#ifdef WRITE_EEPROM_ON_START
+		write_eeprom();
+	#endif
+
 	// Считываем данные из EEPROM
 	read_eeprom();
-	
+
 	// Пин управления колокольчиком
 	#ifdef SPEED_CHIME_PIN
 		pinMode(SPEED_CHIME_PIN, OUTPUT);
 		digitalWrite(SPEED_CHIME_PIN, LOW);
 	#endif
-
-	Serial.begin(SERIAL_PORT_SPEED);
 
 	// Старт дисплея
 	u8g2.begin();
@@ -2027,14 +2068,8 @@ void setup() { // 0
 	// Режим XOR при отрисовке текста
 	u8g2.setDrawColor(2);
 
-
-	// Ожидаем включение замка зажигания
-	while (!digitalRead(INT_POWER_PIN)) {
-		delay(100);
-	}
-
-	// Проверка состояния габаритов и замка зажигания
-	power_n_light_status();
+	// Включаемся
+	power_on();
 
 	#ifdef DEBUG_MODE
 		LCDMode = LCD_MODE_ON_START;
@@ -2134,7 +2169,7 @@ void loop_2() { // 0
 				Serial.println(F("Distance Clear"));
 			#endif	
 			Distance = -1 * DIST;
-			FuelBurned = 0.0;
+			FuelBurned = -1 * FuelBurnedRide;
 			write_eeprom();
 		}
 		else {
@@ -2173,7 +2208,7 @@ void loop() { // 0
 	loop_2(); // 8
 
 	// Обновлять дисплей только при наличии данных
-	if (DataOk && PowerState) {
+	if (DataOk) {
 
 		#ifdef SPEED_CHIME_PIN
 			speed_chime(); // 4
