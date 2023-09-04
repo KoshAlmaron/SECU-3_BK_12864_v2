@@ -6,8 +6,12 @@
 	2020-12-09 - Изменил размер пакета для версии 4.9
 	2020-12-11 - При ХХ отображается только РХХ, 
 								ДПДЗ отображается при положении газа более 2%.
-							- Поменял шрифты температуры ОЖ и РХХ.
-							- Добавил пороги для значений и их индикацию.
+						 - Поменял шрифты температуры ОЖ и РХХ.
+						 - Добавил пороги для значений и их индикацию.
+	2021-01-05 - Добавил возможность отображения AFR вместо напряжения.
+						 - Добавил пороги для напряжения.
+						 - Добавил возможность выбора числа импульсов датчика 
+								скорости на 1 км.
 
 
 	0 - Прием данных от SECU
@@ -37,6 +41,11 @@
 #include <EEPROM.h>
 #include <avr/pgmspace.h>
 
+// Число импульсов датчика скорости на 1 км
+#define SPEED_SENSOR_COUNT 6000
+// Коэффициент для вычисления скорости и дистанции
+#define M_PERIOD_DISTANCE 1000.0 / SPEED_SENSOR_COUNT
+
 // Пороги значений для температуры ОЖ
 #define WATER_TEMP_MIN -30.0
 #define WATER_TEMP_MAX 96.0
@@ -48,16 +57,26 @@
 // Порог значений для УДК
 #define UDK_VOLT_MAX 0.87
 
+// Раскомментировать для отображения АФР вместо напряжения
+//#define SHOW_LAMBDA_AFR
+
+// Порог значений для ШДК
+#define LAMBDA_AFR_MIN 13.0
+#define LAMBDA_AFR_MAX 15.0
+
+// Порог значений наддува
+#define OVERBOOST_LIMIT 150.0
+
 // Пороги значений для лямбда коррекции
 #define LAMBDA_CORR_MIN -15.0
 #define LAMBDA_CORR_MAX 15.0
 
 // Пороги напряжения сети
-#define BATT_VOLT_MIN 11.0
-#define BATT_VOLT_MAX 15.0
+#define BATT_VOLT_MIN 12.0
+#define BATT_VOLT_MAX 14.5
 
-// Раскомментировать для прошивки v4.9
-//#define SECU_DATA_V49
+// Закомментировать для прошивки v4.8 и ниже.
+#define SECU_DATA_V49
 
 #ifdef SECU_DATA_V49
 	#define V49_DATA_SHIFT 2
@@ -226,7 +245,7 @@ float build_speed(byte i) {
 	*(pValue + 1) = Data[i];
 	if (Value != 0 && Value != 65535) {
 		float Period = (float) Value / 312500.0;
-		float Speed = (float)  ((0.166666 / Period) * 3600.0) / 1000.0;
+		float Speed = (float)  ((M_PERIOD_DISTANCE / Period) * 3600.0) * 0.001;
 		return Speed;
 	}
 	else {
@@ -242,7 +261,7 @@ float build_distance(byte i) {
 	*(pValue + 1) = Data[i + 1];
 	*(pValue + 2) = Data[i];
 
-	float Dist = (float) (0.166666 * Value) * 0.001;
+	float Dist = (float) (M_PERIOD_DISTANCE * Value) * 0.001;
 	return Dist;
 }
 
@@ -415,7 +434,7 @@ void lcd_update() {
 	draw_distance(0, 44);
 
 	// УОЗ и давление
-	draw_angle_map(44, 0);
+	draw_map_airtemp(44, 0);
 	// Положение педали газа и РХХ
 	draw_trottle(44, 22);
 	// Средний расход топлива
@@ -424,7 +443,7 @@ void lcd_update() {
 	// УДК
 	draw_O2_sensor(86, 0);
 	// Напряжение батареи
-	draw_airtemp_batt(86, 22); 
+	draw_angle_batt(86, 22); 
 	// Израсходованное топливо
 	draw_fuel(86, 44);
 
@@ -521,31 +540,35 @@ void draw_distance(byte x, byte y) {
 	u8g2.drawUTF8(x + 11 + (29 - L), y + H * 2 + 5, CharVal);
 }
 
-void draw_angle_map(byte x, byte y) {
-	float ANGLE = (float) build_int(9) * 0.03125;           // 32
-	float DDANGLE = (float) build_int(13) * 0.03125;           // 32
+void draw_map_airtemp(byte x, byte y) {
 	float MAP = (float) build_int(3) * 0.015625;            // 64
+	float AIRTEMP = (float) build_int(34 + V49_DATA_SHIFT) * 0.25;           // 4
 	byte H;
 	byte L;
 	char CharVal[6];
 
-	if (BoxState > 0 && DDANGLE > 0.1) {
+	if (BoxState > 0) {
+		if (MAP > OVERBOOST_LIMIT) {
 			u8g2.drawBox(x + 1, y, 39, 10);
+		}
+		if (AIRTEMP < AIR_TEMP_MIN || AIRTEMP > AIR_TEMP_MAX) {
+			u8g2.drawBox(x + 1, y + 10, 39, 10);
+		}
 	}
 
-	u8g2.drawXBMP(x + 2, y + 1, Angle_width, Angle_height, Angle_bits);
-	u8g2.drawXBMP(x + 2, y + 11, Map_width, Map_height, Map_bits);
+	u8g2.drawXBMP(x + 2, y + 1, Map_width, Map_height, Map_bits);
+	u8g2.drawXBMP(x + 4, y + 11, AirTemp_width, AirTemp_height, AirTemp_bits);
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
-	dtostrf(ANGLE, 4, 1, CharVal);
-	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 13 + (22 - L), y + H + 2, CharVal);
-	u8g2.drawXBMP(x + 13 + 22 + 1, y + 2, Cels_width, Cels_height, Cels_bits);
-
 	dtostrf(MAP, 5, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(x + 13 + (22 - L), y + H + 2, CharVal);
+
+	dtostrf(AIRTEMP, 4, 1, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(x + 13 + (22 - L), y + H * 2 + 5, CharVal);
+	u8g2.drawXBMP(x + 13 + 22 + 1, y + H + 5, Cels_width, Cels_height, Cels_bits);
 }
 
 void draw_trottle(byte x, byte y) {
@@ -600,16 +623,27 @@ void draw_afc(byte x, byte y) {
 }
 
 void draw_O2_sensor(byte x, byte y) {
-	float ADD_I1 = (float) build_int(19) * 0.0025;      // 400
+	#ifdef SHOW_LAMBDA_AFR
+		float AFR = (float) build_int(60 + V49_DATA_SHIFT) * 0.0078125;      // 128
+	#else
+		float ADD_I1 = (float) build_int(19) * 0.0025;      // 400
+	#endif
+
 	float AFR_CORR = (float) build_int(50 + V49_DATA_SHIFT) * 0.1953125; // 5.12
 	char CharVal[6];
 	byte H;
 	byte L;
 
 	if (BoxState > 0) {
-		if (ADD_I1 > UDK_VOLT_MAX) {
-			u8g2.drawBox(x + 1, y, 41, 10);
-		}
+		#ifdef SHOW_LAMBDA_AFR
+			if (AFR < LAMBDA_AFR_MIN || AFR > LAMBDA_AFR_MAX) {
+				u8g2.drawBox(x + 1, y, 41, 10);
+			}
+		#else
+			if (ADD_I1 > UDK_VOLT_MAX) {
+				u8g2.drawBox(x + 1, y, 41, 10);
+			}
+		#endif
 		if (AFR_CORR < LAMBDA_CORR_MIN || AFR_CORR > LAMBDA_CORR_MAX) {
 			u8g2.drawBox(x + 1, y + 10, 41, 10);
 		}
@@ -620,7 +654,11 @@ void draw_O2_sensor(byte x, byte y) {
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
-	dtostrf(ADD_I1, 3, 2, CharVal);
+	#ifdef SHOW_LAMBDA_AFR
+		dtostrf(AFR, 4, 1, CharVal);
+	#else
+		dtostrf(ADD_I1, 3, 2, CharVal);
+	#endif
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(x + 15 + (25 - L), y + H + 2, CharVal);
 
@@ -633,35 +671,37 @@ void draw_O2_sensor(byte x, byte y) {
 	u8g2.drawUTF8(x + 15 + (25 - L), y + H * 2 + 5, CharVal);
 }
 
-void draw_airtemp_batt(byte x, byte y) {
-	float AIRTEMP = (float) build_int(34 + V49_DATA_SHIFT) * 0.25;           // 4
+void draw_angle_batt(byte x, byte y) {
 	float BAT = (float) build_int(5) * 0.0025;          // 400
+	float ANGLE = (float) build_int(9) * 0.03125;           // 32
+	float DDANGLE = (float) build_int(13) * 0.03125;           // 32
 	char CharVal[6];
 	byte H;
 	byte L;
 
 	if (BoxState > 0) {
-		if (AIRTEMP < AIR_TEMP_MIN || AIRTEMP > AIR_TEMP_MAX) {
+		if (BAT < BATT_VOLT_MIN || BAT > BATT_VOLT_MAX) {
 			u8g2.drawBox(x + 1, y + 1, 41, 9);
 		}
-		if (BAT < BATT_VOLT_MIN || BAT > BATT_VOLT_MAX) {
+		if (DDANGLE > 0.1) {
 			u8g2.drawBox(x + 1, y + 10, 41, 10);
 		}
 	}
 
-	u8g2.drawXBMP(x + 5, y + 1, AirTemp_width, AirTemp_height, AirTemp_bits);
-	u8g2.drawXBMP(x + 2, y + 11, Batt_width, Batt_height, Batt_bits);
+	u8g2.drawXBMP(x + 2, y + 1, Batt_width, Batt_height, Batt_bits);
+	u8g2.drawXBMP(x + 2, y + 11, Angle_width, Angle_height, Angle_bits);
+
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
-	dtostrf(AIRTEMP, 4, 1, CharVal);
+	dtostrf(BAT, 4, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(x + 11 + (26 - L), y + H + 2, CharVal);
-	u8g2.drawXBMP(x + 11 + 26 + 1, y + 2, Cels_width, Cels_height, Cels_bits);
 
-	dtostrf(BAT, 5, 1, CharVal);
+	dtostrf(ANGLE, 4, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(x + 11 + (26 - L), y + H * 2 + 5, CharVal);
+	u8g2.drawXBMP(x + 11 + 26 + 1, y + H + 5, Cels_width, Cels_height, Cels_bits);
 }
 
 void draw_fuel(byte x, byte y) {
@@ -669,17 +709,17 @@ void draw_fuel(byte x, byte y) {
 	byte H;
 	byte L;
 
-	u8g2.drawXBMP(x + 2, y + 2, Fuel_width, Fuel_height, Fuel_bits);
+	u8g2.drawXBMP(x + 2, y + 3, Fuel_width, Fuel_height, Fuel_bits);
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
 	dtostrf(FuelBurned, 4, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 16 + (19 - L), y + H + 2, CharVal);
+	u8g2.drawUTF8(x + 19 + (19 - L), y + H + 2, CharVal);
 
 	dtostrf(FuelBurnedAll, 4, 0, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 16 + (19 - L), y + H * 2 + 5, CharVal);
+	u8g2.drawUTF8(x + 19 + (19 - L), y + H * 2 + 5, CharVal);
 }
 
 void draw_init(byte x, byte y) {
