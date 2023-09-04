@@ -94,7 +94,7 @@
 #define FUEL_TANK_LEVEL_AVG 20
 
 // Скорость обновления основного и второго экрана (пауза между обновлениями в мс)
-#define LCD_UPDATE_DELAY 200
+#define LCD_UPDATE_DELAY 300
 // Скорость обновления экрана замера разгона
 #define LCD_ACC_UPDATE_DELAY 200
 

@@ -84,17 +84,19 @@
 	2021-11-08 - Добавил экран завершения.
 	2021-11-11 - Уменьшил количество использованных шрифтов, это осовободило 2,5 КБ flash памяти.
 				- Исправил несколько ошибок в коде новых функций.
-	2021-11-21 - Добавил управления питанием, после завершения БК сам себя выключает через MOSFET.
+	2021-11-21 - Добавил управление питанием, после завершения БК сам себя выключает через MOSFET.
 	2021-11-27 - Изменил расчет израсходованного топлива, теперь топливо учитывается в мл,
 					Так как расчет топлива происходил на пределе точности float.
 	2021-11-28 - Исправил расчет средней скорости на экране завершения.
 	2021-12-01 - Добавил буфер уровня топлива, настраивается с помощью FUEL_TANK_LEVEL_AVG.
 				- Экран завершения отображается только если пройдено больше 100м.
+	2021-12-03 - Исправил режим подсветки и начальные показания топлива при старте БК.
+	2021-12-10 - Исправил баг экрана и управления питания, который появлялся 
+					при быстром выключении и включении зажигания (перезапуск двигателя)
+	2021-12-14 - Добавил замер разгона 60-100.
+	2021-12-17 - Добавил большой блок лямбда коррекции.
 
 	ПЛАН:
-	 - Не отображать экран завершения, если двигатель не запускался. 2021-12-01
-	 - Переделать расчет израсходованного топлива, 2021-11-27
-	 - Буфер уровня топлива, 2021-12-01
 	 - Аварийный уровень топлива,
 	 - Дисплей на MAX7219.
 */
@@ -118,15 +120,14 @@
 // Номер экрана при запуске в режиме отладки
 #define LCD_MODE_ON_START 0
 
-
 // Запись значений пробега и расхода, если случайно затер или при замене Arduino.
 // Расход топлива храниться в мл, потому надо умножать литры на 1000.
 // Раскомментировать, прошить, закомментировать и прошить.
 //#define WRITE_EEPROM_ON_START
-#define WRITE_DISTANCE_DAY 84.2
-#define WRITE_DISTANCE_ALL 6830.0
-#define WRITE_FUEL_BURNED_DAY 9.3 * 1000.0
-#define WRITE_FUEL_BURNED_ALL 545.0 * 1000.0
+#define WRITE_DISTANCE_DAY 14.8
+#define WRITE_DISTANCE_ALL 7411.0
+#define WRITE_FUEL_BURNED_DAY 1.3 * 1000.0
+#define WRITE_FUEL_BURNED_ALL 583.0 * 1000.0
 
 //=============================================================================
 //=============================== СБРОС EEPROM  ===============================
@@ -287,7 +288,8 @@ void draw_init() { // 20
 	#ifdef PWM_BRIGHT_PIN
 		analogWrite(PWM_BRIGHT_PIN, BrightPWM[BrightMode]);
 	#endif
-				
+
+	u8g2.setMaxClipWindow();
 	lcd_main();
 }
 
@@ -409,7 +411,7 @@ void lcd_second() { // 0
 	
     draw_inj_duty_f(86, 22);    // Загрузка форсунок (F)	
 	
-    draw_air_map_index_f(86, 44);    // Номер расхода воздуха (F)	
+    draw_lambda_corr_f(86, 44);
 
 	// ========================== Блоки данных ==========================
 
@@ -433,11 +435,12 @@ void lcd_second() { // 0
 }
 
 // Экран замера разгона
-void lcd_acceleration() { // 29
+void lcd_acceleration() { // 40
 	int RPM = 0;
 	byte BoxHeight = 0;
 	float SPD = 0.0;
 	float PrevSPD = 0.0;
+
 	unsigned int A30 = 0;
 	unsigned int A60 = 0;
 	unsigned int A100 = 0;
@@ -445,30 +448,63 @@ void lcd_acceleration() { // 29
 	byte L = 0;
 	char CharVal[6];
 
-	// Состояния: 0 - не готов к замеру,
-	//						1 - готов к замеру,
-	//						2 - идет замер,
-	//						3 - замер завершен,
-	//						4 - замер не удался.
+	// Состояния: 		0 - не готов к замеру,
+	//					1 - готов к замеру,
+	//					2 - идет замер 0-100,
+	//					12 - идет замер 60-100.
+	//					3 - замер завершен,
+	//					4 - замер не удался,
+
 	byte Mode = 0;
+
+	// Скорость при включении экрана
+	SPD = build_speed(27 + DataShift);
+	// Если скорость = 0, то замер идет 0-100,
+	// в противном случае 60-100.
+	//SPD = 40;
+	byte StartSpeed = 0;
+	if (SPD > 0) {
+		StartSpeed = 60;
+	}
+
+	#ifdef DEBUG_MODE
+		unsigned long TestTimer = 0;
+	#endif
 
 	while (LCDMode == 2) {
 		loop_2();
 		if (DataOk) {
-			SPD = build_speed(27 + DataShift);
-			//if (Mode == 2) {SPD = min(SPD + 0.001, 120);}
+
+			#ifdef DEBUG_MODE
+				RPM = 4020;
+				if (millis() - TestTimer >= 100) {
+					TestTimer = millis();
+					if (Mode > 0) {SPD = min(SPD + 1.2, 120);}
+				}
+			#else
+				SPD = build_speed(27 + DataShift);
+				RPM = build_int(1);
+			#endif
+
 			// Запуск измерения при скрости 0 в течение 2 сек.
 			if (Mode == 0) {
-				if (SPD > 0) {
+				if (StartSpeed == 0 && SPD > 0) {
 					Timer = millis();
 				}
-				if (millis() - Timer >= 2000) {
+				else if (StartSpeed == 60 && SPD > 50) {
+					Timer = millis();
+				}
+
+				if (millis() - Timer >= 1000) {
 					Mode = 1;
 				}
 			}
 			if (Mode == 1) {
-				if (SPD > 0) {
+				if (SPD > StartSpeed) {
 					Mode = 2;
+					if (StartSpeed == 60) {
+						Mode = 12;
+					}
 					Timer = millis();
 				}
 			}
@@ -482,6 +518,16 @@ void lcd_acceleration() { // 29
 				}
 				else if (SPD >= 60 && PrevSPD < 60) {
 					A60 = millis() - Timer;
+				}
+				else if (SPD >= 100 && PrevSPD < 100) {
+					A100 = millis() - Timer;
+					Mode = 3;
+				}
+			}
+
+			if (Mode == 12) {
+				if (millis() - Timer >= 65535) {
+					Mode = 4;
 				}
 				else if (SPD >= 100 && PrevSPD < 100) {
 					A100 = millis() - Timer;
@@ -507,7 +553,7 @@ void lcd_acceleration() { // 29
 				else if (Mode == 4) {
 					u8g2.drawXBMP(9, 26, FAIL_width, FAIL_height, FAIL_bits);
 				}
-				else if (Mode == 2 || Mode == 3) {
+				else if (Mode == 2 || Mode == 12 || Mode == 3) {
 					if (A30 > 0) {
 						u8g2.setFont(u8g2_font_helvB08_tn);
 						u8g2.setCursor(1, 11 + u8g2.getAscent() / 2);
@@ -518,6 +564,15 @@ void lcd_acceleration() { // 29
 						L = u8g2.getUTF8Width(CharVal);
 						u8g2.drawUTF8(61 - L, 11 + u8g2.getAscent() / 2, CharVal);
 					}
+					else if (StartSpeed >= 30) {
+						u8g2.setFont(u8g2_font_helvB08_tn);
+						u8g2.setCursor(1, 11 + u8g2.getAscent() / 2);
+						u8g2.print(F("30"));
+						u8g2.setFont(u8g2_font_helvB10_tn);
+						u8g2.setCursor(43, 11 + u8g2.getAscent() / 2);
+						u8g2.print(F("---"));
+					}
+					
 					if (A60 > 0) {
 						u8g2.setFont(u8g2_font_helvB08_tn);
 						u8g2.setCursor(1, 33 + u8g2.getAscent() / 2);
@@ -528,6 +583,15 @@ void lcd_acceleration() { // 29
 						L = u8g2.getUTF8Width(CharVal);
 						u8g2.drawUTF8(61 - L, 33 + u8g2.getAscent() / 2, CharVal);
 					}
+					else if (StartSpeed >= 60) {
+						u8g2.setFont(u8g2_font_helvB08_tn);
+						u8g2.setCursor(1, 33 + u8g2.getAscent() / 2);
+						u8g2.print(F("60"));
+						u8g2.setFont(u8g2_font_helvB10_tn);
+						u8g2.setCursor(43, 33 + u8g2.getAscent() / 2);
+						u8g2.print(F("---"));
+					}
+
 					if (A100 > 0) {
 						u8g2.setFont(u8g2_font_helvB08_tn);
 						u8g2.setCursor(1, 55 + u8g2.getAscent() / 2);
@@ -574,7 +638,6 @@ void lcd_acceleration() { // 29
 
 				u8g2.drawFrame(66, 0, 7, 64);
 
-				RPM = build_int(1);
 				//RPM = 1003;
 				if (RPM > 900) {
 					RPM = constrain(RPM, 900, 7100);
@@ -1119,7 +1182,7 @@ void draw_lambda_corr_h(byte x, byte y) { // 14
 		}
 	}
 
-	u8g2.drawXBMP(x + 2, y + 1, LambdaCorr_width, LambdaCorr_height, LambdaCorr_bits);
+	u8g2.drawXBMP(x + 2, y + 1, LambdaCorrS_width, LambdaCorrS_height, LambdaCorrS_bits);
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
@@ -1130,6 +1193,32 @@ void draw_lambda_corr_h(byte x, byte y) { // 14
 
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(41 - 5 - L + x, y + 9, CharVal);
+}
+
+void draw_lambda_corr_f(byte x, byte y) { // 14
+	char CharVal[6];
+	byte H;
+	byte L;
+
+	float AFR_CORR = (float) build_int(50 + DataShift) * 0.1953125; // 5.12
+	AFR_CORR = constrain(AFR_CORR, -99.9, 99.9);
+	if (AlarmBoxState > 0) {
+		if (AFR_CORR < LAMBDA_CORR_MIN || AFR_CORR > LAMBDA_CORR_MAX) {
+			u8g2.drawBox(x + 1, y + 1, 40, 19);
+		}
+	}
+
+	u8g2.drawXBMP(x + 2, y + 3, LambdaCorrL_width, LambdaCorrL_height, LambdaCorrL_bits);
+	u8g2.setFont(u8g2_font_helvB12_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(AFR_CORR, 3, 0, CharVal);
+	if (AFR_CORR > 0) {
+		CharVal[0] = '+';
+	}
+
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 11 + H/2, CharVal);
 }
 
 void draw_battery_h(byte x, byte y) { // 13
@@ -1232,7 +1321,7 @@ void draw_speed_f(byte x, byte y) { // 16
 	byte L;
 
 	if (AlarmBoxState > 0) {
-		if  (DDANGLE > 0.1) {
+		if (DDANGLE > 0.1) {
 			u8g2.drawBox(x + 1, y + 1, 40, 19);
 		}
 	}
@@ -1660,7 +1749,11 @@ void build_data() { // 12
 		}
 
 		// Подсчет моточасов
-		if (EngineTimer == 0) {EngineTimer = millis();}
+		if (EngineTimer == 0) {
+			EngineTimer = millis();
+			FuelTankLevel = (float) build_int(75) * 0.015625;            // 64
+			FuelTankLevel = constrain(FuelTankLevel, 0, 333);
+		}
 		else if (millis() - EngineTimer >= 999) {
 			int RPM = build_int(1);
 			#ifdef DEBUG_MODE
@@ -1829,6 +1922,7 @@ void power_on() {
 	#endif
 
 	// Установка яркости
+	if (digitalRead(INT_LIGHT_PIN)) {BrightMode = 1;}
 	BrightLCD[2] = BrightLCD[BrightMode];
 	BrightPWM[2] = BrightPWM[BrightMode];
 
@@ -1924,6 +2018,14 @@ void power_off() {
 
 	// Отключаем питание
 	digitalWrite(POWER_RELAY_PIN, LOW);
+
+	// Этот кусок на тот случай, если выключить зажигания и сразу включить обратно
+	while (!digitalRead(INT_IGN_PIN)) {
+		delay(250);
+	}
+
+	digitalWrite(POWER_RELAY_PIN, HIGH);
+	power_on();
 }
 
 void power_n_light_status() {
@@ -1944,7 +2046,7 @@ void lcd_bright_change() {
 	// Подсветка дисплея
 	if (BrightLCD[BrightMode] != BrightLCD[2]) {
 		if (BrightLCD[BrightMode] < BrightLCD[2]) {
-			BrightLCD[2] = max(0, BrightLCD[2] - 2);
+			BrightLCD[2] = max(LCD_BRIGHT_MIN, BrightLCD[2] - 2);
 		}
 		else if (BrightLCD[BrightMode] > BrightLCD[2]) {
 			BrightLCD[2] = min(255, BrightLCD[2] + 2);
@@ -2031,11 +2133,13 @@ void setup() { // 0
 	// ШИМ управление подсветкой экрана
 	#ifdef LCD_BRIGHT_PIN
 		pinMode(LCD_BRIGHT_PIN, OUTPUT);
+		analogWrite(LCD_BRIGHT_PIN, 0);
 	#endif
 
 	// ШИМ управление подсветкой приборной панели
 	#ifdef PWM_BRIGHT_PIN
 		pinMode(PWM_BRIGHT_PIN, OUTPUT);
+		analogWrite(PWM_BRIGHT_PIN, 0);
 	#endif
 
 	// Очистка EEPROM
@@ -2076,6 +2180,9 @@ void setup() { // 0
 		for (byte i = 0; i < CE_COUNT_MAX; i++ ) {
 			CountCE[i] = i + 1;
 		}
+
+		pinMode(INT_IGN_PIN, INPUT_PULLUP);
+		pinMode(INT_LIGHT_PIN, INPUT_PULLUP);
 	#else
 		// Определение длины пакета
 		get_data_size();

@@ -58,7 +58,7 @@ unsigned long EngineTimer = 0;
 unsigned long RideTimer = 0;
 
 // Уровень топлива
-float FuelTankLevel = 0.0;
+float FuelTankLevel = -1.0;
 
 // Энкодер
 char EncoderState = 0;
