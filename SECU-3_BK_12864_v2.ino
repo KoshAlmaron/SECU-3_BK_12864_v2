@@ -48,12 +48,18 @@
 			   	- Сделал автоопределение размера пакета от SECU,
 			   	- Добавил второй экран с данными.
 			   	- Добавил блоки для отображения:
-			   		* Давление масла (F),
 			   		* ДАД2, давление газа (F),
 			   		* Дифф.давление, ДАД2-ДАД (F),
 			   		* Темп. 2, температура газа (F),
 			   		* Загрузка форсунок (F).
-
+	2021-10-09 - Добавил блок номера расхода воздуха.
+	2021-10-11 - Добавил блоки для отображения:
+	 			- Добавил в настройки шаг регулировки яркости (BRIGHT_STEP),
+					* Напряжение сети (F),
+					* Напряжение УДК / AFR (F),
+					* Температура воздуха на впуске (F),
+					* Средний расход топлива суточный (F),
+					* Средний расход топлива общий (F).
 
 	
 ==================================================================================================
@@ -207,7 +213,7 @@ void draw_water_temp_f(byte x, byte y) {
 	}
 
 	// Рисуем пиктограмму параметра.
-	u8g2.drawXBMP(x + 2, y + 3, Temp_width, Temp_height, Temp_bits);
+	u8g2.drawXBMP(x + 2, y + 3, WaterTempL_width, WaterTempL_height, WaterTempL_bits);
 	
 	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
 	H = u8g2.getAscent();
@@ -320,14 +326,14 @@ void draw_temp2_f(byte x, byte y) {
 	char CharVal[4];
 	byte H;
 	byte L;
-
-	u8g2.drawXBMP(x + 2, y + 2, Temp2_width, Temp2_height, Temp2_bits);
+	u8g2.drawXBMP(x + 2, y + 3, Temp2_width, Temp2_height, Temp2_bits);
 	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
 	H = u8g2.getAscent();
 
 	dtostrf(Temp2, 3, 0, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
+	u8g2.drawUTF8(41 - 5 - L + x, y + 10 + H/2, CharVal);
+	u8g2.drawXBMP(41 - 4 + x, y + 5, Cels_width, Cels_height, Cels_bits);
 }
 
 void draw_airtemp_h(byte x, byte y) {
@@ -343,7 +349,7 @@ void draw_airtemp_h(byte x, byte y) {
 		}
 	}
 
-	u8g2.drawXBMP(x + 4, y + 1, AirTemp_width, AirTemp_height, AirTemp_bits);
+	u8g2.drawXBMP(x + 4, y + 1, AirTempS_width, AirTempS_height, AirTempS_bits);
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
@@ -351,6 +357,28 @@ void draw_airtemp_h(byte x, byte y) {
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(41 - 5 - L + x, y + 9, CharVal);
 	u8g2.drawXBMP(41 - 4 + x, y + 2, Cels_width, Cels_height, Cels_bits);
+}
+
+void draw_airtemp_f(byte x, byte y) {
+	float AIRTEMP = (float) build_int(34 + DataShift) * 0.25;           // 4
+	AIRTEMP = constrain(AIRTEMP, -99, 333);
+	byte H;
+	byte L;
+	char CharVal[4];
+	if (BoxState > 0) {
+		if (AIRTEMP < AIR_TEMP_MIN || AIRTEMP > AIR_TEMP_MAX) {
+			u8g2.drawBox(x + 1, y + 1, 40, 19);
+		}
+	}
+
+	u8g2.drawXBMP(x + 2, y + 2, AirTempL_width, AirTempL_height, AirTempL_bits);
+	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(AIRTEMP, 3, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 5 - L + x, y + 10 + H/2, CharVal);
+	u8g2.drawXBMP(41 - 4 + x, y + 5, Cels_width, Cels_height, Cels_bits);
 }
 
 void draw_trottle_f(byte x, byte y) {
@@ -406,6 +434,49 @@ void draw_afc_f(byte x, byte y) {
 	u8g2.drawUTF8(41 - 1 - L + x, y + H * 2 + 5, CharVal);
 }
 
+void draw_afc_daily_f(byte x, byte y) {
+	float AFC = 0.0;
+	char CharVal[5];
+	byte H;
+	byte L;
+
+	// Средний расход суточный
+	if (Distance + DIST > 1) {
+		AFC = FuelBurned / (Distance + DIST) * 100;
+		AFC = constrain(AFC, 0, 99.9);
+	}
+
+	u8g2.drawXBMP(x + 1, y + 3, AFCS_width, AFCS_height, AFCS_bits);
+	u8g2.setFont(u8g2_font_helvB10_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(AFC, 4, 1, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 11 + H/2, CharVal);
+}
+
+void draw_afc_total_f(byte x, byte y) {
+	float TAFC = 0.0;
+	char CharVal[5];
+	byte H;
+	byte L;
+
+	// Средний расход общий
+	if (DistanceAll + DIST > 1) {
+		TAFC = FuelBurnedAll / (DistanceAll + DIST) * 100;
+		TAFC = constrain(TAFC, 0, 99.9);
+	}
+
+	u8g2.drawXBMP(x + 1, y + 3, AFCS_width, AFCS_height, AFCS_bits);
+	u8g2.setFont(u8g2_font_helvB10_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(TAFC, 4, 1, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 11 + H/2, CharVal);
+}
+
+
 void draw_O2_sensor_h(byte x, byte y) {
 	// Тип датчика кислорода, 0 - УДК, 1 - ШДК.
 	byte LambdaType;
@@ -441,12 +512,55 @@ void draw_O2_sensor_h(byte x, byte y) {
 		}
 	}
 
-	u8g2.drawXBMP(x + 2, y + 1, O2_width, O2_height, O2_bits);
+	u8g2.drawXBMP(x + 2, y + 1, O2S_width, O2S_height, O2S_bits);
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(41 - 5 - L + x, y + 9, CharVal);
+}
+
+void draw_O2_sensor_f(byte x, byte y) {
+	// Тип датчика кислорода, 0 - УДК, 1 - ШДК.
+	byte LambdaType;
+	char CharVal[5];
+	byte H;
+	byte L;
+
+	float AFR = (float) build_int(60 + DataShift) * 0.0078125;      // 128
+	AFR = constrain(AFR, 0, 33);
+	if (AFR > 0) {
+		// Если есть показания АФР, значит показывать надо АФР.
+		LambdaType = 1;
+		dtostrf(AFR, 4, 1, CharVal);
+	}
+	else {
+		// Иначе показываем напряжение.
+		LambdaType = 0;
+		AFR = (float) build_int(19) * 0.0025;      // 400
+		AFR = constrain(AFR, 0, 5);
+		dtostrf(AFR, 4, 2, CharVal);
+	}
+
+	if (BoxState > 0) {
+		if (LambdaType == 1) {
+			if (AFR < LAMBDA_AFR_MIN || AFR > LAMBDA_AFR_MAX) {
+				u8g2.drawBox(x + 1, y + 1, 40, 19);
+			}
+		}
+		else {
+			if (AFR < UDK_VOLT_MIN || AFR > UDK_VOLT_MAX) {
+				u8g2.drawBox(x + 1, y + 1, 40, 19);
+			}
+		}
+	}
+
+	u8g2.drawXBMP(x + 2, y + 2, O2L_width, O2L_height, O2L_bits);
+	u8g2.setFont(u8g2_font_helvB10_tn);
+	H = u8g2.getAscent();
+
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 11 + H/2, CharVal);
 }
 
 void draw_lambda_corr_h(byte x, byte y) {
@@ -489,7 +603,7 @@ void draw_battery_h(byte x, byte y) {
 		}
 	}
 
-	u8g2.drawXBMP(x + 2, y + 1, Batt_width, Batt_height, Batt_bits);
+	u8g2.drawXBMP(x + 2, y + 1, BatteryS_width, BatteryS_height, BatteryS_bits);
 
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
@@ -497,6 +611,29 @@ void draw_battery_h(byte x, byte y) {
 	dtostrf(BAT, 4, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(41 - 5 - L + x, y + 9, CharVal);
+}
+
+void draw_battery_f(byte x, byte y) {
+	float BAT = (float) build_int(5) * 0.0025;          // 400
+	BAT = constrain(BAT, 0, 33);
+
+	char CharVal[5];
+	byte H;
+	byte L;
+	if (BoxState > 0) {
+		if (BAT < BATT_VOLT_MIN || BAT > BATT_VOLT_MAX) {
+			u8g2.drawBox(x + 1, y + 1, 40, 19);
+		}
+	}
+
+	u8g2.drawXBMP(x + 2, y + 2, BatteryL_width, BatteryL_height, BatteryL_bits);
+
+	u8g2.setFont(u8g2_font_helvB10_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(BAT, 4, 1, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 11 + H/2, CharVal);
 }
 
 void draw_angle_h(byte x, byte y) {
@@ -666,6 +803,23 @@ void draw_inj_duty_f(byte x, byte y) {
 	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
 }
 
+void draw_air_map_index_f(byte x, byte y) {
+	byte MapIndex = Data[15];
+	MapIndex = constrain(MapIndex, 0, 16);
+	char CharVal[3];
+	byte H;
+	byte L;
+
+	u8g2.drawXBMP(x + 2, y + 2, AirMapindex_width, AirMapindex_height, AirMapindex_bits);
+	u8g2.setFont(u8g2_font_helvB12_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(MapIndex, 2, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 3 - L + x, y + 10 + H/2, CharVal);
+}
+
+
 // Обороты на дополнительном сегментном дисплее
 void draw_rpm_tm1637() {
 	int RPM = build_int(1);
@@ -744,24 +898,23 @@ void lcd_second() {
 	u8g2.clearBuffer();
 
 	// ========================== Блоки данных ==========================
-    draw_oil_pressure_f(0, 0);    // Давление масла (F)	
+    draw_O2_sensor_f(0, 0);    // Напряжение УДК / AFR (F)	
 	
     draw_map_f(0, 22);    // ДАД (F)	
 	
-    draw_map2_f(0, 44);    // ДАД2, давление газа (F)	
+    draw_airtemp_f(0, 44);    // Температура воздуха на впуске (F)	
 	
-    draw_map_diff_f(43, 0);    // Дифф.давление, ДАД2-ДАД (F)	
+    draw_battery_f(43, 0);    // Напряжение сети (F)	
 	
     draw_rpm_f(43, 22);    // Обороты (F)	
 	
-    draw_egt_f(43, 44);    // Температура выхлопных газов (F)	
+    draw_afc_daily_f(43, 44);    // Средний расход топлива суточный (F)	
 	
     draw_fuel_tank_f(86, 0);    // Уровень топлива (F)	
 	
     draw_inj_duty_f(86, 22);    // Загрузка форсунок (F)	
 	
-    draw_temp2_f(86, 44);    // Темп. 2, температура газа (F)	
-	
+    draw_afc_f(86, 44);    // Средний расход топлива суточный и общий (F)	
 
 	// ========================== Блоки данных ==========================
 
@@ -1440,11 +1593,12 @@ void loop_2() {
 	check_ce_errors();
 
 	#ifdef DEBUG_MODE
-		DataOk = 1;
+		//DataOk = 1;
+		LCDMode = 1;
 	#endif
 
 	if (abs(EncoderState) == 4) {
-		Bright = max(MIN_BRIGHT, min(255, Bright + EncoderState / abs(EncoderState) * 2));
+		Bright = max(MIN_BRIGHT, min(255, Bright + EncoderState / abs(EncoderState) * BRIGHT_STEP));
 		analogWrite(BRIGHT_PIN, Bright);
 		EncoderState = 0;
 	}

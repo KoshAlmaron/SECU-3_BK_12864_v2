@@ -40,6 +40,8 @@
 #define MIN_BRIGHT 121
 // По умолчанию
 #define STD_BRIGHT 180
+// Шаг регулировки яркости
+#define BRIGHT_STEP 3
 
 // Раскомментировать для отображения оборотов на дополнительном экране TM1637.
 //#define SHOW_RPM_TM1637
