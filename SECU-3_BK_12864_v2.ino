@@ -887,9 +887,13 @@ void draw_tm1637() { // 3
 		Value = constrain(Value, 0, 100);
 		Display7S.showNumberDec(Value, false);
 	}
-	else if (DataType == 3) {
+	else if (DataType == 4) {
 		int Value = (float) build_int(3) * 0.015625; // 4 - ДАД
 		Value = constrain(Value, 0, 333);
+		Display7S.showNumberDec(Value, false);
+	}
+	else if (DataType == 5) {
+		int Value =  build_speed(27 + DataShift); // 5 - Скорость
 		Display7S.showNumberDec(Value, false);
 	}
 }
