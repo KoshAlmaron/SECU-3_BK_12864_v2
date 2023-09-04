@@ -5,30 +5,37 @@
 	2020-12-07
 	2020-12-09 - Изменил размер пакета для версии 4.9
 	2020-12-11 - При ХХ отображается только РХХ, 
-								ДПДЗ отображается при положении газа более 2%.
-						 - Поменял шрифты температуры ОЖ и РХХ.
-						 - Добавил пороги для значений и их индикацию.
+						ДПДЗ отображается при положении газа более 2%.
+					- Поменял шрифты температуры ОЖ и РХХ.
+					- Добавил пороги для значений и их индикацию.
 	2021-01-05 - Добавил возможность отображения AFR вместо напряжения.
-						 - Добавил пороги для напряжения.
-						 - Добавил возможность выбора числа импульсов датчика 
-								скорости на 1 км.
+					- Добавил пороги для напряжения.
+					- Добавил возможность выбора числа импульсов датчика 
+						скорости на 1 км.
 	2021-02-19 - Добавил экран замера разгона 0-100.
 	2021-04-25 - Изменил размер пакета для версии 4.9 от 14.04.2021
 	2021-06-20 - Добавил сигнализацию превышения скорости (колокольчик AE86). 
 	2021-07-27 - Добавил экран ошибок CE.
 	2021-09-28 - Исправил размер пакета для версии 4.8. Вынес в настройки скорость порта.
+	2021-10-03 - Добавил автоматическое переключение вывода АФР или напряжение УДК.
+					- Добавил возможность вывода оборотов на семисегментный дисплей на TM1637.
+					- Увеличил частоту обновления экрана.
+					- Добавил в настройки скорость обновления экрана.
+	2021-10-04 - Исправил баг с переполнением буфера незадействованных параметров,
+						которые имели значение "7FFF".
+					- Добавил ограничения значений для всех параметров.
 
 
 	0 - Прием данных от SECU
 	1 - 
 	2 - Прерывание на отключение питания
 	3 - ШИМ управление подсветкой дисплея
-	4 - 
+	4 - Speed Chime
 	5 - Encoder A
 	6 - Encoder C
 	7 - Encoder B
-	8 - 
-	9 - 
+	8 - TM1637 DIO
+	9 - TM1637 CLK
 	10 - SPI RS (CS)
 	11 - SPI MOSI
 	12 - 
@@ -37,7 +44,7 @@
 	A0 - 
 	A1 - 
 	A2 - 
-	A3 - Speed Chime
+	A3 - 
 	A4 - 
 	A5 - 
 
@@ -46,6 +53,7 @@
 #include <U8g2lib.h>
 #include <EEPROM.h>
 #include <avr/pgmspace.h>
+#include <TM1637Display.h>
 
 // Раскомментировать один блок для нужной версии прошивки
 
@@ -89,8 +97,13 @@
 // Порог значений для УДК
 #define UDK_VOLT_MAX 0.87
 
-// Раскомментировать для отображения АФР вместо напряжения
-//#define SHOW_LAMBDA_AFR
+// Раскомментировать для отображения оборотов на дополнительном экране TM1637.
+//#define SHOW_RPM_TM1637
+// Яркость свечения экрана, 0 - минимальная, 7 - макимальная.  
+#define TM1637_BRIGHTNESS 4
+// Пины для TM1637
+#define TM1637_DIO 8
+#define TM1637_CLK 9
 
 // Порог значений для ШДК
 #define LAMBDA_AFR_MIN 13.0
@@ -107,14 +120,18 @@
 #define BATT_VOLT_MIN 12.0
 #define BATT_VOLT_MAX 14.5
 
-//  Массив байтов от SECU и флаг успешного получения данных
-byte Data[DATA_ARRAY_SIZE + 2];
-byte DataOk = 0;
+// Скорость обновления экрана (пауза между обновлениями в мс)
+#define LCD_UPDATE_DELAY 400
 
 // Таймеры для дисплея
 unsigned long LCDTimer = 0;
 // Таймер для бокса инверсии 
 char BoxState = 0;
+
+//  Массив байтов от SECU и флаг успешного получения данных
+//byte Data[DATA_ARRAY_SIZE + 2];
+byte DataOk = 0;
+byte Data[DATA_ARRAY_SIZE + 2];
 
 // В глобальных переменных только дистанция для использования в прерывании
 float DIST = 0.0;       // (29-31)  Дистанция
@@ -149,7 +166,7 @@ byte Bright;
 #define STD_BRIGHT 180
 
 // Колокольчик AE86
-#define SPEED_CHIME_PIN 8
+#define SPEED_CHIME_PIN 4
 // Лимит скорости
 #define SPEED_CHIME_LIMIT 100
 // Интервал включения и время удержания
@@ -159,7 +176,6 @@ byte Bright;
 byte SpeedChimeStatus = 0;
 // Таймер для колокольчика
 unsigned long SpeedChimeTimer = 0;
-
 
 // Наличие ошибок CE
 byte StatusCE = 0;
@@ -293,6 +309,7 @@ float build_speed(byte i) {
 	if (Value != 0 && Value != 65535) {
 		float Period = (float) Value / 312500.0;
 		float Speed = (float)  ((M_PERIOD_DISTANCE / Period) * 3600.0) * 0.001;
+		Speed = constrain(Speed, 0, 333);
 		return Speed;
 	}
 	else {
@@ -320,6 +337,7 @@ void build_data() {
 
 			// Расчет израсходованного топлива за интервал
 			float FF_FRQ = (float) build_int(32 + V49_DATA_SHIFT) * 0.00390625;  // 256
+			FF_FRQ = constrain(FF_FRQ, 0, 256);
 			if (FuelTimer > 0) {
 				float FFAVG = (float) (PrevFF_FRQ + FF_FRQ) * 0.1125; // Расход л/ч (3600 / 16000) / 2
 				FuelBurned += (float) FFAVG * (millis() - FuelTimer) / 3600000;
@@ -611,6 +629,7 @@ const char* const CEItemsArray[] PROGMEM = {CEItem_0, CEItem_1
 
 void draw_ff_fc(byte x, byte y) {
 	float FF_FRQ = (float) build_int(32 + V49_DATA_SHIFT) * 0.00390625;  // 256
+	FF_FRQ = constrain(FF_FRQ, 0, 256);
 	float TPS = (float) Data[18] * 0.5;                     // 2
 	float SPD = build_speed(27 + V49_DATA_SHIFT);
 	float FF = 0.0;
@@ -654,6 +673,7 @@ void draw_ff_fc(byte x, byte y) {
 
 void draw_water_temp(byte x, byte y, byte a=0) {
 	float TEMP = (float) build_int(7) * 0.25;
+	TEMP = constrain(TEMP, -99, 333);
 	char CharVal[6];
 	byte H;
 	byte L;
@@ -694,7 +714,9 @@ void draw_distance(byte x, byte y) {
 
 void draw_map_airtemp(byte x, byte y) {
 	float MAP = (float) build_int(3) * 0.015625;            // 64
+	MAP = constrain(MAP, 0, 333);
 	float AIRTEMP = (float) build_int(34 + V49_DATA_SHIFT) * 0.25;           // 4
+	AIRTEMP = constrain(AIRTEMP, -99, 333);
 	byte H;
 	byte L;
 	char CharVal[6];
@@ -775,27 +797,39 @@ void draw_afc(byte x, byte y) {
 }
 
 void draw_O2_sensor(byte x, byte y) {
-	#ifdef SHOW_LAMBDA_AFR
-		float AFR = (float) build_int(60 + V49_DATA_SHIFT) * 0.0078125;      // 128
-	#else
-		float ADD_I1 = (float) build_int(19) * 0.0025;      // 400
-	#endif
-
-	float AFR_CORR = (float) build_int(50 + V49_DATA_SHIFT) * 0.1953125; // 5.12
+	// Тип датчика кислорода, 0 - УДК, 1 - ШДК.
+	byte LambdaType;
 	char CharVal[6];
 	byte H;
 	byte L;
 
+	float AFR = (float) build_int(60 + V49_DATA_SHIFT) * 0.0078125;      // 128
+	AFR = constrain(AFR, 0, 33);
+	if (AFR > 0) {
+		// Если есть показания АФР, значит показывать надо АФР.
+		LambdaType = 1;
+		dtostrf(AFR, 4, 1, CharVal);
+	}
+	else {
+		// Иначе показываем напряжение.
+		LambdaType = 0;
+		AFR = (float) build_int(19) * 0.0025;      // 400
+		AFR = constrain(AFR, 0, 5);
+		dtostrf(AFR, 3, 2, CharVal);
+	}
+
+	float AFR_CORR = (float) build_int(50 + V49_DATA_SHIFT) * 0.1953125; // 5.12
 	if (BoxState > 0) {
-		#ifdef SHOW_LAMBDA_AFR
+		if (LambdaType == 1) {
 			if (AFR < LAMBDA_AFR_MIN || AFR > LAMBDA_AFR_MAX) {
 				u8g2.drawBox(x + 1, y, 41, 10);
 			}
-		#else
-			if (ADD_I1 > UDK_VOLT_MAX) {
+		}
+		else {
+			if (AFR > UDK_VOLT_MAX) {
 				u8g2.drawBox(x + 1, y, 41, 10);
 			}
-		#endif
+		}
 		if (AFR_CORR < LAMBDA_CORR_MIN || AFR_CORR > LAMBDA_CORR_MAX) {
 			u8g2.drawBox(x + 1, y + 10, 41, 10);
 		}
@@ -806,11 +840,6 @@ void draw_O2_sensor(byte x, byte y) {
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
-	#ifdef SHOW_LAMBDA_AFR
-		dtostrf(AFR, 4, 1, CharVal);
-	#else
-		dtostrf(ADD_I1, 3, 2, CharVal);
-	#endif
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(x + 15 + (25 - L), y + H + 2, CharVal);
 
@@ -825,8 +854,11 @@ void draw_O2_sensor(byte x, byte y) {
 
 void draw_angle_batt(byte x, byte y) {
 	float BAT = (float) build_int(5) * 0.0025;          // 400
+	BAT = constrain(BAT, 0, 33);
 	float ANGLE = (float) build_int(9) * 0.03125;           // 32
+	ANGLE = constrain(ANGLE, 0, 99);
 	float DDANGLE = (float) build_int(13) * 0.03125;           // 32
+	DDANGLE = constrain(DDANGLE, 0, 99);
 	char CharVal[6];
 	byte H;
 	byte L;
@@ -891,6 +923,7 @@ void draw_init(byte x, byte y) {
 
 void draw_map(byte x, byte y) {
 	float MAP = (float) build_int(3) * 0.015625;            // 64
+	MAP = constrain(MAP, 0, 333);
 	char CharVal[6];
 	byte H;
 	byte L;
@@ -912,6 +945,7 @@ void draw_map(byte x, byte y) {
 
 void draw_speed(byte x, byte y, float SPD) {
 	float DDANGLE = (float) build_int(13) * 0.03125;
+	DDANGLE = constrain(DDANGLE, 0, 99);
 	char CharVal[6];
 	byte H;
 	byte L;
@@ -928,6 +962,15 @@ void draw_speed(byte x, byte y, float SPD) {
 	dtostrf(SPD, 3, 0, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(x + 43 - L, y + H + 5, CharVal);
+}
+
+void draw_rpm_tm1637() {
+	int RPM = build_int(1);
+	RPM = constrain(RPM, 0, 9999);
+	RPM = trunc(RPM * 0.1) * 10;
+	TM1637Display display(TM1637_CLK, TM1637_DIO);
+	display.setBrightness(TM1637_BRIGHTNESS);
+	display.showNumberDec(RPM, false);
 }
 
 void lcd_main() {
@@ -1006,7 +1049,7 @@ void lcd_acceleration() {
 		if (DataOk) {
 			SPD = build_speed(27 + V49_DATA_SHIFT);
 			//if (Mode == 2) {SPD = min(SPD + 0.001, 120);}
-			// Запуск измерения при скростьи 0 в течение 2 сек.
+			// Запуск измерения при скрости 0 в течение 2 сек.
 			if (Mode == 0) {
 				if (SPD > 0) {
 					Timer = millis();
@@ -1038,7 +1081,7 @@ void lcd_acceleration() {
 				}
 			}
 
-			if (millis() - LCDTimer >= 350) {
+			if (millis() - LCDTimer >= LCD_UPDATE_DELAY) {
 				LCDTimer = millis();
 				ButtonTimer = min(255, ButtonTimer + 1);
 				BoxState += 1;
@@ -1170,7 +1213,7 @@ void lcd_ce_errors() {
 			ButtonState = 2;
 		}
 
-		if (millis() - LCDTimer >= 350) {
+		if (millis() - LCDTimer >= LCD_UPDATE_DELAY) {
 			LCDTimer = millis();
 			ButtonTimer = min(255, ButtonTimer + 1);
 		
@@ -1270,6 +1313,12 @@ void setup() {
 	u8g2.setBitmapMode(1);
 	// Режим XOR при отрисовке текста
 	u8g2.setDrawColor(2);
+
+	#ifdef SHOW_RPM_TM1637
+		TM1637Display display(TM1637_CLK, TM1637_DIO);
+		display.setBrightness(TM1637_BRIGHTNESS);
+		display.showNumberDec(0, false);
+	#endif
 	
 	//write_eeprom();
 	draw_init(23, 0);
@@ -1283,8 +1332,7 @@ void loop_2() {
 	check_ce_errors();
 
 	//DataOk = 1;
-	//LCDMode = 2;
-
+	//LCDMode = 1;
 	if (abs(EncoderState) == 4) {
 		Bright = max(MIN_BRIGHT, min(255, Bright + EncoderState / abs(EncoderState) * 2));
 		analogWrite(BRIGHT_PIN, Bright);
@@ -1313,7 +1361,7 @@ void loop() {
 	if (DataOk) {
 		speed_chime();
 
-		if (millis() - LCDTimer >= 500) {
+		if (millis() - LCDTimer >= LCD_UPDATE_DELAY) {
 			LCDTimer = millis();
 
 			ButtonTimer = min(255, ButtonTimer + 1);
@@ -1323,6 +1371,10 @@ void loop() {
 			if (LCDMode == 0) {lcd_main();}
 			else if (LCDMode == 1) {lcd_acceleration();}
 			else if (LCDMode == 2) {lcd_ce_errors();}
+
+			#ifdef SHOW_RPM_TM1637
+				draw_rpm_tm1637();
+			#endif
 		}
 	}
 }
