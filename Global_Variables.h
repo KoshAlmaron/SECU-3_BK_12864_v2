@@ -81,8 +81,8 @@ unsigned long SpeedChimeTimer = 0;
 // Наличие ошибок CE
 byte StatusCE = 0;
 // Количество ошибок
-#define CE_COUNT_MAX 21
-byte CountCE[21];
+#define CE_COUNT_MAX 24
+byte CountCE[24];
 // Предыдущее состояние
 uint32_t PrevCE;
 
