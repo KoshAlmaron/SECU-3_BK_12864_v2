@@ -117,6 +117,10 @@
 				- Добавил программный сброс при повторном запуске БК до отключения питания.
 	2022-02-27 - Добавил проверку контрольной суммы для пакета данных.
 	2022-06-06 - Добавил большой блок уровня ШИМ вентилятора охлаждения.
+	2022-07-22 - Исправил баг при перезапуске БК, при котором счетчик израсходованного
+					топлива сбрасывался, а пробег оставался, так как она хранится в SECU.
+	2022-10-05 - Добавил функцию проверки датчика аварийного давления масла.
+					При старте БК проверяется исправность цепи, далее контролируется состояние.
 
 	ПЛАН:
 	 - Дисплей на MAX7219.
@@ -125,6 +129,7 @@
 // Подключение бибилиотек
 #include <U8g2lib.h>
 #include <avr/eeprom.h>
+#include <EEPROM.h>
 #include <avr/pgmspace.h>
 #include <TM1637Display.h>
 
@@ -144,13 +149,16 @@
 // Запись значений пробега и расхода, если случайно затер или при замене платы.
 // Расход топлива храниться в мл, потому надо умножать литры на 1000.
 // Раскомментировать, прошить, закомментировать и прошить.
+
 //#define WRITE_EEPROM_ON_START
 
-#define WRITE_DISTANCE_DAY 10.4
-#define WRITE_DISTANCE_ALL 10339.0
-#define WRITE_FUEL_BURNED_DAY 0.9 * 1000.0
-#define WRITE_FUEL_BURNED_ALL 883.0 * 1000.0
-#define WRITE_ENGINE_HOURS 72.0 * 3600
+// 07.10.2022
+#define WRITE_DISTANCE_DAY 178.2
+#define WRITE_DISTANCE_ALL 1501.0
+#define WRITE_FUEL_BURNED_DAY 17.7 * 1000.0
+#define WRITE_FUEL_BURNED_ALL 1286.0 * 1000.0
+
+#define WRITE_ENGINE_HOURS 100.0 * 3600
 
 #define WRITE_BRIGHT_LCD_NIGHT 0
 #define WRITE_BRIGHT_LCD_DAY 255
@@ -190,6 +198,45 @@
 
 // OLED 2.42" на чипе SSD1309
 U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI u8g2(U8G2_R0, SPI_CS_PIN, SPI_DC_PIN);
+
+
+//=============================================================================
+//=================== Функциия контроля давления масла=========================
+//=============================================================================
+void oil_pressure_state(byte Mode = 0) {
+	// Инверсия экрана при аварии ДАДМ
+	if (Mode == 1) {
+		if (OilPressureState > 1) {
+			if (AlarmBoxState > 0) {
+				u8g2.drawBox(0, 0, 128, 64);
+
+				if (AlarmBoxState >= ALARM_BOX_TIMER) {
+					if (OilPressureState == 8 && digitalRead(INT_OIL_PIN)) {
+						OilPressureState = 0;
+					}
+				}
+			}
+		}
+		return;
+	}
+
+	if (OilPressureState == 16) {return;}
+
+	int RPM = build_int(1);
+	//RPM = 950;
+	if (RPM < 400) {
+		if (OilPressureState == 8) {
+			OilPressureState = 0;
+		}
+		return;
+	}
+
+	if (OilPressureState == 8) {return;}
+	if (!digitalRead(INT_OIL_PIN)) {
+		OilPressureState = 8;
+		AlarmBoxState = 0;
+	}
+}
 
 //=============================================================================
 //===================== Функциия отрисовки экранов ============================
@@ -419,13 +466,15 @@ void draw_lcd_main() { // 0
 	// Блок параметра яркости
 	draw_bright();
 
+	// Проверка ДАДМ
+	oil_pressure_state(1);
+
 	// Отсылаем данные на дисплей
 	if (ScreenChange == 0) {u8g2.sendBuffer();}
 }
 
 // Второй экран
 void draw_lcd_second() { // 0 
-
 	// Очищаем память дисплея
 	if (ScreenChange == 0) {u8g2.clearBuffer();}
 
@@ -463,6 +512,9 @@ void draw_lcd_second() { // 0
 
 	// Блок параметра яркости
 	draw_bright();
+
+	// Проверка ДАДМ
+	oil_pressure_state(1);
 
 	// Отсылаем данные на дисплей
 	if (ScreenChange == 0) {u8g2.sendBuffer();}
@@ -505,7 +557,6 @@ void lcd_ce_errors() { // 36
 
 	while (1) {
 		if (ScreenChange == 0) {loop_2();}
-
 		// Перелистывание ошибок
 		if (ButtonState[0] == 32) {
 			StartRow = max(0, StartRow - 1);
@@ -554,6 +605,15 @@ void lcd_ce_errors() { // 36
 
 		// Выходим из цикла при анимации смены экрана
 		if (ScreenChange != 0) {break;}
+
+		// Проверка ДАДМ
+		if (millis() - LCDTimer >= LCD_UPDATE_DELAY) {
+				LCDTimer = millis();
+
+				AlarmBoxState += 1;
+				if (AlarmBoxState > ALARM_BOX_TIMER) {AlarmBoxState = 1 - ALARM_BOX_TIMER;}
+		}
+		oil_pressure_state(1);
 
 		// Отсылаем данные на дисплей
 		u8g2.sendBuffer();
@@ -733,6 +793,9 @@ void lcd_acceleration() {
 				}
 
 				draw_lcd_acceleration();
+
+				// Проверка ДАДМ
+				oil_pressure_state(1);
 
 				// Отсылаем данные на дисплей
 				u8g2.sendBuffer();
@@ -1711,7 +1774,7 @@ void get_data_size() {
 
 	if (DataSize >= 74) {DataShift = 2;}
 
-	// Ждем первый паке данных
+	// Ждем первый пакет данных
 	while (DataOk == 0) {
 		receive_data();
 		power_n_light_status();
@@ -1724,6 +1787,9 @@ void get_data_size() {
 		}
 	}
 	build_data();
+	DIST = build_distance(29 + DataShift);
+	// Обнуление пробега, если БК перезапустился при работающей SECU/
+	DistDelta = -1 * DIST;
 }
 
 void draw_no_signal() {
@@ -1861,7 +1927,7 @@ float build_distance(byte i) { // 9
 	*(pValue + 2) = Data[i];
 
 	float Dist = (float) (M_PERIOD_DISTANCE * Value) * 0.001;
-	return Dist;
+	return Dist + DistDelta;
 }
 
 // Сборка некоторых данных из байтов от SECU
@@ -2387,6 +2453,20 @@ void setup() { // 0
 	// Вход для проверки состояния замка зажигания
 	pinMode(INT_IGN_PIN, INPUT);
 
+	// Вход для проверки состояния ДАДМ
+	#ifdef INT_OIL_PIN
+		pinMode(INT_OIL_PIN, INPUT);
+
+		// Если при старте нет напряжения, значит перегорела лампочка
+		// или неисправна проводка.
+		if (digitalRead(INT_OIL_PIN)) {
+			OilPressureState = 16;
+		}
+		else {
+			OilPressureState = 1;
+		}
+	#endif
+
 	// Вход для проверки состояния габаритов
 	#ifndef AUTO_BRIGHT_ENABLE
 		pinMode(INT_LIGHT_PIN, INPUT);
@@ -2480,6 +2560,10 @@ void setup() { // 0
 
 // Вспомогательный цикл
 void loop_2() { // 0
+
+	// Проверка ДАДМ
+	oil_pressure_state(0);
+
 	// Проверка состояния габаритов и замка зажигания
 	power_n_light_status();
 
@@ -2635,6 +2719,7 @@ void loop() { // 0
 
 		if (millis() - LCDTimer >= LCD_UPDATE_DELAY) {
 			LCDTimer = millis();
+
 			AlarmBoxState += 1;
 			if (AlarmBoxState > ALARM_BOX_TIMER) {AlarmBoxState = 1 - ALARM_BOX_TIMER;}
 
