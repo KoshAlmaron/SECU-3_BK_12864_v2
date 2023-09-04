@@ -24,6 +24,14 @@
 	2021-10-04 - Исправил баг с переполнением буфера незадействованных параметров,
 						которые имели значение "7FFF".
 					- Добавил ограничения значений для всех параметров.
+	2021-10-05 - Исправил еще один баг с переполнением буфера теперь уже для параметров, 
+					которые хранятся в EEPROM. Во-первых, неверно указал длину строки для пробега
+					и израсходованного топлива, во-вторых забыл, что на новой Ардуино в EEPROM
+					могут быть не обязательно нули.
+	==================================================================================================
+		Переход на версию 2
+	==================================================================================================
+	2021-10-05 - 
 
 
 	0 - Прием данных от SECU
@@ -54,6 +62,16 @@
 #include <EEPROM.h>
 #include <avr/pgmspace.h>
 #include <TM1637Display.h>
+
+// Перед первой прошивкой необходимо стереть EEPROM,
+// так как там может храниться всякая ересь.
+// Для этого можно предварительно залить пример для работы с EEPROM
+// "eeprom_clear" из Arduino IDE, после чего залить уже код БК.
+
+// Или раскомментировать строку ниже, прошиться, 
+//	закомментировать обратно и прошить заново.
+//#define EEPROM_CLEAR_ON_START
+
 
 // Раскомментировать один блок для нужной версии прошивки
 
@@ -95,15 +113,8 @@
 #define AIR_TEMP_MAX 50.0
 
 // Порог значений для УДК
+#define UDK_VOLT_MIN 0.01
 #define UDK_VOLT_MAX 0.87
-
-// Раскомментировать для отображения оборотов на дополнительном экране TM1637.
-//#define SHOW_RPM_TM1637
-// Яркость свечения экрана, 0 - минимальная, 7 - макимальная.  
-#define TM1637_BRIGHTNESS 4
-// Пины для TM1637
-#define TM1637_DIO 8
-#define TM1637_CLK 9
 
 // Порог значений для ШДК
 #define LAMBDA_AFR_MIN 13.0
@@ -122,6 +133,14 @@
 
 // Скорость обновления экрана (пауза между обновлениями в мс)
 #define LCD_UPDATE_DELAY 400
+
+// Раскомментировать для отображения оборотов на дополнительном экране TM1637.
+//#define SHOW_RPM_TM1637
+// Яркость свечения экрана, 0 - минимальная, 7 - макимальная.  
+#define TM1637_BRIGHTNESS 4
+// Пины для TM1637
+#define TM1637_DIO 8
+#define TM1637_CLK 9
 
 // Таймеры для дисплея
 unsigned long LCDTimer = 0;
@@ -504,15 +523,15 @@ const unsigned char Trollface_bits[] PROGMEM = {
   0xff, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
+#define Cels_width 3
+#define Cels_height 3
+const unsigned char Cels_bits[] PROGMEM = {0x02, 0x05, 0x02};
+
 #define Temp_width 8
 #define Temp_height 15
 const unsigned char Temp_bits[] PROGMEM = {
   0x1c, 0xf4, 0x14, 0x14, 0xf4, 0x14, 0x14, 0xf4, 0x14, 0x36, 0x63, 0x41,
   0x41, 0x63, 0x3e };
-
-#define Cels_width 3
-#define Cels_height 3
-const unsigned char Cels_bits[] PROGMEM = {0x02, 0x05, 0x02};
 
 #define Road_width 7
 #define Road_height 16
@@ -520,17 +539,22 @@ const unsigned char Road_bits[] PROGMEM = {
 	0x41, 0x49, 0x49, 0x49, 0x41, 0x49, 0x49, 0x49, 0x41, 0x49, 0x49, 0x49,
 	0x41, 0x49, 0x49, 0x49 };
 
-#define Angle_width 10
-#define Angle_height 8
-const unsigned char Angle_bits[] PROGMEM = {
-	0x40, 0x00, 0x20, 0x00, 0x10, 0x00, 0x28, 0x00, 0x44, 0x00, 0x82, 0x00,
-	0x81, 0x00, 0xff, 0x03 };
-
 #define Map_width 9
 #define Map_height 8
 const unsigned char Map_bits[] PROGMEM = {
 	0x38, 0x00, 0x54, 0x00, 0x92, 0x00, 0x82, 0x00, 0x44, 0x00, 0x38, 0x00,
 	0x10, 0x00, 0xff, 0x01 };
+
+#define AirTemp_width 6
+#define AirTemp_height 8
+const unsigned char AirTemp_bits[] PROGMEM = {
+	0x24, 0x0e, 0x2a, 0x0a, 0x2a, 0x11, 0x11, 0x0e };
+
+#define Angle_width 10
+#define Angle_height 8
+const unsigned char Angle_bits[] PROGMEM = {
+	0x40, 0x00, 0x20, 0x00, 0x10, 0x00, 0x28, 0x00, 0x44, 0x00, 0x82, 0x00,
+	0x81, 0x00, 0xff, 0x03 };
 
 #define Trottle_width 8
 #define Trottle_height 12
@@ -560,11 +584,6 @@ const unsigned char O2_bits[] PROGMEM = {
 const unsigned char LambdaCorr_bits[] PROGMEM = {
 	0x8c, 0x01, 0xcc, 0x03, 0xec, 0x07, 0x8c, 0x01, 0x8c, 0x01, 0xbf, 0x01,
 	0x9e, 0x01, 0x8c, 0x01 };
-
-#define AirTemp_width 6
-#define AirTemp_height 8
-const unsigned char AirTemp_bits[] PROGMEM = {
-	0x24, 0x0e, 0x2a, 0x0a, 0x2a, 0x11, 0x11, 0x0e };
 
 #define Batt_width 11
 #define Batt_height 8
@@ -627,7 +646,7 @@ const char* const CEItemsArray[] PROGMEM = {CEItem_0, CEItem_1
   , CEItem_8, CEItem_9, CEItem_10, CEItem_11, CEItem_12
   , CEItem_13, CEItem_14, CEItem_15, CEItem_16, CEItem_17, CEItem_18, CEItem_19, CEItem_20};
 
-void draw_ff_fc(byte x, byte y) {
+void draw_ff_fc_f(byte x, byte y) {
 	float FF_FRQ = (float) build_int(32 + V49_DATA_SHIFT) * 0.00390625;  // 256
 	FF_FRQ = constrain(FF_FRQ, 0, 256);
 	float TPS = (float) Data[18] * 0.5;                     // 2
@@ -640,9 +659,11 @@ void draw_ff_fc(byte x, byte y) {
 
 	// Мгновенный расход л/ч
 	FF = (float) FF_FRQ * 0.225; // (3600 / 16000)
+	FF = constrain(FF, 0, 99.9);
 	// Мгновенный расход л/100км
 	if (SPD > 3 && TPS > 3) {
-	FC = min(99.9, (FF * 100.0) / SPD);
+		FC = (FF * 100.0) / SPD;
+		FC = constrain(FC, 0, 99.9);
 		// Режим отображения №2 - движение 
 		Mode = 2; // Drive
 	}
@@ -653,49 +674,66 @@ void draw_ff_fc(byte x, byte y) {
 
 	u8g2.setFont(u8g2_font_haxrcorp4089_tr);
 	H = u8g2.getAscent();
-	u8g2.drawUTF8(x + 1, y + H + 2, "F");
+	u8g2.drawUTF8(x + 2, y + H + 2, "F");
 
 	if (Mode == 1) {
 		dtostrf(FF, 4, 1, CharVal);
-		u8g2.drawUTF8(x + 1, y + H * 2 + 4, "F");
+		u8g2.drawUTF8(x + 2, y + H * 2 + 4, "F");
 	}
 	else if (Mode == 2) {
 		dtostrf(FC, 4, 1, CharVal);
-		u8g2.drawUTF8(x + 1, y + H * 2 + 4, "C");
+		u8g2.drawUTF8(x + 2, y + H * 2 + 4, "C");
 	}
 
 	u8g2.setFont(u8g2_font_helvB12_tn);
 	H = u8g2.getAscent();
 	L = u8g2.getUTF8Width(CharVal);
 	if (CharVal[3] == '1') {L += 2;}
-	u8g2.drawUTF8(x + 10 + (30 - L), y + 4 + H, CharVal);
+
+	// Позиция по X для строки на всю ячейку
+	// X = 41 - 2 - L + x, где
+	// 41 - крайняя правая координата в ячейке,
+	// 2 - отступ справа,
+	// L - длина строки,
+	// x - крайняя левая координата в ячейке.
+
+	// Позиция по Y для строки на всю ячейку
+	// Y = y + 10 + H/2, где
+	// y - крайняя верхняя координата в ячейке,
+	// 10 - центральная координата в ячейке,
+	// H/2 - половина высоты символа,
+
+	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
 }
 
-void draw_water_temp(byte x, byte y, byte a=0) {
+void draw_water_temp_f(byte x, byte y) {
 	float TEMP = (float) build_int(7) * 0.25;
 	TEMP = constrain(TEMP, -99, 333);
-	char CharVal[6];
+	char CharVal[4];
 	byte H;
 	byte L;
 
+	// Рисуем прямоугольник, при выходе параметра за допустимые пределы.
 	if (BoxState > 0) {
 		if (TEMP < WATER_TEMP_MIN || TEMP > WATER_TEMP_MAX) {
-			u8g2.drawBox(x, y + 1, 42 + a, 19);
+			u8g2.drawBox(x + 1, y + 1, 40, 19);
 		}
 	}
 
-	u8g2.drawXBMP(x + 1, y + 3, Temp_width, Temp_height, Temp_bits);
+	// Рисуем пиктограмму параметра.
+	u8g2.drawXBMP(x + 2, y + 3, Temp_width, Temp_height, Temp_bits);
+	
 	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
 	H = u8g2.getAscent();
 
 	dtostrf(TEMP, 3, 0, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 34 - L + a, y + H + 5, CharVal);
-	u8g2.drawXBMP(x + 34 + 1 + a, y + 5, Cels_width, Cels_height, Cels_bits);
+	u8g2.drawUTF8(41 - 5 - L + x, y + 10 + H/2, CharVal);
+	u8g2.drawXBMP(41 - 4 + x, y + 5, Cels_width, Cels_height, Cels_bits);
 }
 
-void draw_distance(byte x, byte y) {
-	char CharVal[6];
+void draw_distance_f(byte x, byte y) {
+	char CharVal[7];
 	byte H;
 	byte L;
 
@@ -703,18 +741,40 @@ void draw_distance(byte x, byte y) {
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
-	dtostrf(Distance + DIST, 5, 1, CharVal);
+	dtostrf(Distance + DIST, 6, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 11 + (29 - L), y + H + 2, CharVal);
+	u8g2.drawUTF8(41 - 1 - L + x, y + H + 2, CharVal);
 
-	dtostrf(DistanceAll + DIST, 5, 0, CharVal);
+	dtostrf(DistanceAll + DIST, 6, 0, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 11 + (29 - L), y + H * 2 + 5, CharVal);
+	u8g2.drawUTF8(41 - 1 - L + x, y + H * 2 + 5, CharVal);
 }
 
-void draw_map_airtemp(byte x, byte y) {
+void draw_map_h(byte x, byte y) {
 	float MAP = (float) build_int(3) * 0.015625;            // 64
 	MAP = constrain(MAP, 0, 333);
+
+	byte H;
+	byte L;
+	char CharVal[6];
+
+	if (BoxState > 0) {
+		if (MAP > OVERBOOST_LIMIT) {
+			u8g2.drawBox(x + 1, y + 1, 40, 9);
+		}
+	}
+
+	u8g2.drawXBMP(x + 2, y + 1, Map_width, Map_height, Map_bits);
+
+	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(MAP, 5, 1, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 5 - L + x, y + 9, CharVal);
+}
+
+void draw_airtemp_h(byte x, byte y) {
 	float AIRTEMP = (float) build_int(34 + V49_DATA_SHIFT) * 0.25;           // 4
 	AIRTEMP = constrain(AIRTEMP, -99, 333);
 	byte H;
@@ -722,30 +782,22 @@ void draw_map_airtemp(byte x, byte y) {
 	char CharVal[6];
 
 	if (BoxState > 0) {
-		if (MAP > OVERBOOST_LIMIT) {
-			u8g2.drawBox(x + 1, y, 39, 10);
-		}
 		if (AIRTEMP < AIR_TEMP_MIN || AIRTEMP > AIR_TEMP_MAX) {
-			u8g2.drawBox(x + 1, y + 10, 39, 10);
+			u8g2.drawBox(x + 1, y + 1, 40, 9);
 		}
 	}
 
-	u8g2.drawXBMP(x + 2, y + 1, Map_width, Map_height, Map_bits);
-	u8g2.drawXBMP(x + 4, y + 11, AirTemp_width, AirTemp_height, AirTemp_bits);
+	u8g2.drawXBMP(x + 4, y + 1, AirTemp_width, AirTemp_height, AirTemp_bits);
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
-	dtostrf(MAP, 5, 1, CharVal);
-	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 13 + (22 - L), y + H + 2, CharVal);
-
 	dtostrf(AIRTEMP, 4, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 13 + (22 - L), y + H * 2 + 5, CharVal);
-	u8g2.drawXBMP(x + 13 + 22 + 1, y + H + 5, Cels_width, Cels_height, Cels_bits);
+	u8g2.drawUTF8(41 - 5 - L + x, y + 9, CharVal);
+	u8g2.drawXBMP(41 - 4 + x, y + 2, Cels_width, Cels_height, Cels_bits);
 }
 
-void draw_trottle(byte x, byte y) {
+void draw_trottle_f(byte x, byte y) {
 	float TPS = (float) Data[18] * 0.5;                     // 2
 	float IAC = (float) Data[25 + V49_DATA_SHIFT] * 0.5;                     // 2
 	char CharVal[6];
@@ -764,10 +816,10 @@ void draw_trottle(byte x, byte y) {
 	u8g2.setFont(u8g2_font_helvB08_tn);
 	H = u8g2.getAscent();
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 14 + (22 - L), y + H + 6, CharVal);
+	u8g2.drawUTF8(41 - 5 - L + x, y + 10 + H/2, CharVal);
 }
 
-void draw_afc(byte x, byte y) {
+void draw_afc_f(byte x, byte y) {
 	float AFC = 0.0;
 	float TAFC = 0.0;
 	char CharVal[5];
@@ -776,11 +828,13 @@ void draw_afc(byte x, byte y) {
 
 	// Средний расход суточный
 	if (Distance + DIST > 1) {
-		AFC = min(99.9, FuelBurned / (Distance + DIST) * 100);
+		AFC = FuelBurned / (Distance + DIST) * 100;
+		AFC = constrain(AFC, 0, 99.9);
 	}
 	// Средний расход общий
 	if (DistanceAll + DIST > 1) {
-		TAFC = min(99.9, FuelBurnedAll / (DistanceAll + DIST) * 100);
+		TAFC = FuelBurnedAll / (DistanceAll + DIST) * 100;
+		TAFC = constrain(TAFC, 0, 99.9);
 	}
 
 	u8g2.drawXBMP(x + 3, y + 3, AFC_width, AFC_height, AFC_bits);
@@ -789,17 +843,17 @@ void draw_afc(byte x, byte y) {
 
 	dtostrf(AFC, 4, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 15 + (21 - L), y + H + 2, CharVal);
+	u8g2.drawUTF8(41 - 1 - L + x, y + H + 2, CharVal);
 
 	dtostrf(TAFC, 4, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 15 + (21 - L), y + H * 2 + 5, CharVal);
+	u8g2.drawUTF8(41 - 1 - L + x, y + H * 2 + 5, CharVal);
 }
 
-void draw_O2_sensor(byte x, byte y) {
+void draw_O2_sensor_h(byte x, byte y) {
 	// Тип датчика кислорода, 0 - УДК, 1 - ШДК.
 	byte LambdaType;
-	char CharVal[6];
+	char CharVal[5];
 	byte H;
 	byte L;
 
@@ -815,33 +869,46 @@ void draw_O2_sensor(byte x, byte y) {
 		LambdaType = 0;
 		AFR = (float) build_int(19) * 0.0025;      // 400
 		AFR = constrain(AFR, 0, 5);
-		dtostrf(AFR, 3, 2, CharVal);
+		dtostrf(AFR, 4, 2, CharVal);
 	}
 
-	float AFR_CORR = (float) build_int(50 + V49_DATA_SHIFT) * 0.1953125; // 5.12
 	if (BoxState > 0) {
 		if (LambdaType == 1) {
 			if (AFR < LAMBDA_AFR_MIN || AFR > LAMBDA_AFR_MAX) {
-				u8g2.drawBox(x + 1, y, 41, 10);
+				u8g2.drawBox(x + 1, y + 1, 40, 9);
 			}
 		}
 		else {
-			if (AFR > UDK_VOLT_MAX) {
-				u8g2.drawBox(x + 1, y, 41, 10);
+			if (AFR < UDK_VOLT_MIN || AFR > UDK_VOLT_MAX) {
+				u8g2.drawBox(x + 1, y + 1, 40, 9);
 			}
-		}
-		if (AFR_CORR < LAMBDA_CORR_MIN || AFR_CORR > LAMBDA_CORR_MAX) {
-			u8g2.drawBox(x + 1, y + 10, 41, 10);
 		}
 	}
 
 	u8g2.drawXBMP(x + 2, y + 1, O2_width, O2_height, O2_bits);
-	u8g2.drawXBMP(x + 2, y + 11, LambdaCorr_width, LambdaCorr_height, LambdaCorr_bits);
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 15 + (25 - L), y + H + 2, CharVal);
+	u8g2.drawUTF8(41 - 5 - L + x, y + 9, CharVal);
+}
+
+void draw_lambda_corr_h(byte x, byte y) {
+	char CharVal[6];
+	byte H;
+	byte L;
+
+	float AFR_CORR = (float) build_int(50 + V49_DATA_SHIFT) * 0.1953125; // 5.12
+	AFR_CORR = constrain(AFR_CORR, -99.9, 99.9);
+	if (BoxState > 0) {
+		if (AFR_CORR < LAMBDA_CORR_MIN || AFR_CORR > LAMBDA_CORR_MAX) {
+			u8g2.drawBox(x + 1, y + 1, 40, 9);
+		}
+	}
+
+	u8g2.drawXBMP(x + 2, y + 1, LambdaCorr_width, LambdaCorr_height, LambdaCorr_bits);
+	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
+	H = u8g2.getAscent();
 
 	dtostrf(AFR_CORR, 5, 1, CharVal);
 	if (AFR_CORR > 0) {
@@ -849,12 +916,34 @@ void draw_O2_sensor(byte x, byte y) {
 	}
 
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 15 + (25 - L), y + H * 2 + 5, CharVal);
+	u8g2.drawUTF8(41 - 5 - L + x, y + 9, CharVal);
 }
 
-void draw_angle_batt(byte x, byte y) {
+void draw_battery_h(byte x, byte y) {
 	float BAT = (float) build_int(5) * 0.0025;          // 400
 	BAT = constrain(BAT, 0, 33);
+
+	char CharVal[5];
+	byte H;
+	byte L;
+
+	if (BoxState > 0) {
+		if (BAT < BATT_VOLT_MIN || BAT > BATT_VOLT_MAX) {
+			u8g2.drawBox(x + 1, y + 1, 40, 9);
+		}
+	}
+
+	u8g2.drawXBMP(x + 2, y + 1, Batt_width, Batt_height, Batt_bits);
+
+	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(BAT, 4, 1, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 5 - L + x, y + 9, CharVal);
+}
+
+void draw_angle_h(byte x, byte y) {
 	float ANGLE = (float) build_int(9) * 0.03125;           // 32
 	ANGLE = constrain(ANGLE, 0, 99);
 	float DDANGLE = (float) build_int(13) * 0.03125;           // 32
@@ -864,46 +953,91 @@ void draw_angle_batt(byte x, byte y) {
 	byte L;
 
 	if (BoxState > 0) {
-		if (BAT < BATT_VOLT_MIN || BAT > BATT_VOLT_MAX) {
-			u8g2.drawBox(x + 1, y + 1, 41, 9);
-		}
 		if (DDANGLE > 0.1) {
-			u8g2.drawBox(x + 1, y + 10, 41, 10);
+			u8g2.drawBox(x + 1, y + 1, 40, 9);
 		}
 	}
 
-	u8g2.drawXBMP(x + 2, y + 1, Batt_width, Batt_height, Batt_bits);
-	u8g2.drawXBMP(x + 2, y + 11, Angle_width, Angle_height, Angle_bits);
+	u8g2.drawXBMP(x + 2, y + 1, Angle_width, Angle_height, Angle_bits);
 
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
-	dtostrf(BAT, 4, 1, CharVal);
-	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 11 + (26 - L), y + H + 2, CharVal);
-
 	dtostrf(ANGLE, 4, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 11 + (26 - L), y + H * 2 + 5, CharVal);
-	u8g2.drawXBMP(x + 11 + 26 + 1, y + H + 5, Cels_width, Cels_height, Cels_bits);
+	u8g2.drawUTF8(41 - 5 - L + x, y + 9, CharVal);
+	u8g2.drawXBMP(41 - 4 + x, y + 2, Cels_width, Cels_height, Cels_bits);
 }
 
-void draw_fuel(byte x, byte y) {
+void draw_fuel_f(byte x, byte y) {
 	char CharVal[6];
 	byte H;
 	byte L;
 
-	u8g2.drawXBMP(x + 2, y + 3, Fuel_width, Fuel_height, Fuel_bits);
+	u8g2.drawXBMP(x + 1, y + 3, Fuel_width, Fuel_height, Fuel_bits);
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
-	dtostrf(FuelBurned, 4, 1, CharVal);
+	dtostrf(FuelBurned, 5, 1, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 19 + (19 - L), y + H + 2, CharVal);
+	u8g2.drawUTF8(41 - 1 - L + x, y + H + 2, CharVal);
 
-	dtostrf(FuelBurnedAll, 4, 0, CharVal);
+	dtostrf(FuelBurnedAll, 5, 0, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 19 + (19 - L), y + H * 2 + 5, CharVal);
+	u8g2.drawUTF8(41 - 1 - L + x, y + H * 2 + 5, CharVal);
+}
+
+void draw_map_f(byte x, byte y) {
+	float MAP = (float) build_int(3) * 0.015625;            // 64
+	MAP = constrain(MAP, 0, 333);
+	char CharVal[4];
+	byte H;
+	byte L;
+
+	if (BoxState > 0) {
+		if (MAP > OVERBOOST_LIMIT) {
+			u8g2.drawBox(x + 1, y + 1, 40, 19);
+		}
+	}
+
+	u8g2.drawXBMP(x + 2, y + 2, MAP2_width, MAP2_height, MAP2_bits);
+	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(MAP, 3, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
+}
+
+void draw_speed_f(byte x, byte y) {
+	float SPD =  build_speed(27 + V49_DATA_SHIFT);
+	float DDANGLE = (float) build_int(13) * 0.03125;
+	DDANGLE = constrain(DDANGLE, 0, 99);
+	char CharVal[4];
+	byte H;
+	byte L;
+
+	if (BoxState > 0) {
+		if  (DDANGLE > 0.1) {
+			u8g2.drawBox(x + 1, y + 1, 40, 19);
+		}
+	}
+
+	u8g2.drawXBMP(x + 2, y + 2, SPD_width, SPD_height, SPD_bits);
+	u8g2.setFont(u8g2_font_helvB12_tn);
+	H = u8g2.getAscent();
+	dtostrf(SPD, 3, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
+}
+
+void draw_rpm_tm1637() {
+	int RPM = build_int(1);
+	RPM = constrain(RPM, 0, 9999);
+	RPM = trunc(RPM * 0.1) * 10;
+	TM1637Display display(TM1637_CLK, TM1637_DIO);
+	display.setBrightness(TM1637_BRIGHTNESS);
+	display.showNumberDec(RPM, false);
 }
 
 void draw_init(byte x, byte y) {
@@ -921,88 +1055,35 @@ void draw_init(byte x, byte y) {
 	analogWrite(BRIGHT_PIN, Bright);
 }
 
-void draw_map(byte x, byte y) {
-	float MAP = (float) build_int(3) * 0.015625;            // 64
-	MAP = constrain(MAP, 0, 333);
-	char CharVal[6];
-	byte H;
-	byte L;
-
-	if (BoxState > 0) {
-		if (MAP > OVERBOOST_LIMIT) {
-			u8g2.drawBox(x + 1, y + 1, 46, 19);
-		}
-	}
-
-	u8g2.drawXBMP(x + 2, y + 2, MAP2_width, MAP2_height, MAP2_bits);
-	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
-	H = u8g2.getAscent();
-
-	dtostrf(MAP, 3, 0, CharVal);
-	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 41 - L, y + H + 5, CharVal);
-}
-
-void draw_speed(byte x, byte y, float SPD) {
-	float DDANGLE = (float) build_int(13) * 0.03125;
-	DDANGLE = constrain(DDANGLE, 0, 99);
-	char CharVal[6];
-	byte H;
-	byte L;
-
-	if (BoxState > 0) {
-		if  (DDANGLE > 0.1) {
-			u8g2.drawBox(x + 1, y + 1, 46, 19);
-		}
-	}
-
-	u8g2.drawXBMP(x + 2, y + 2, SPD_width, SPD_height, SPD_bits);
-	u8g2.setFont(u8g2_font_helvB12_tn);
-	H = u8g2.getAscent();
-	dtostrf(SPD, 3, 0, CharVal);
-	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 43 - L, y + H + 5, CharVal);
-}
-
-void draw_rpm_tm1637() {
-	int RPM = build_int(1);
-	RPM = constrain(RPM, 0, 9999);
-	RPM = trunc(RPM * 0.1) * 10;
-	TM1637Display display(TM1637_CLK, TM1637_DIO);
-	display.setBrightness(TM1637_BRIGHTNESS);
-	display.showNumberDec(RPM, false);
-}
-
 void lcd_main() {
 	// Очищаем память дисплея
 	u8g2.clearBuffer();
 
-	// ===Отрисовываем блоки===
-	// Расход топлива
-	draw_ff_fc(0, 0);
-	// Температура
-	draw_water_temp(0, 22);
-	// Пробег
-	draw_distance(0, 44);
+	// ========================== Блоки данных ==========================
+    draw_ff_fc_f(0, 0);    // Мгновенный расход топлива (F)	
+	
+    draw_water_temp_f(0, 22);    // Температура ОЖ (F)	
+	
+    draw_distance_f(0, 44);    // Суточный и общий пробег (F)	
+	
+    draw_map_h(43, 0);    // ДАД (H)	
+    draw_airtemp_h(43, 10);    // Температура воздуха на впуске (H)	
+    draw_trottle_f(43, 22);    // ДПДЗ / РХХ (F)	
+	
+    draw_afc_f(43, 44);    // Средний расход топлива (F)	
+	
+    draw_O2_sensor_h(86, 0);    // Напряжение УДК / AFR (H)	
+    draw_lambda_corr_h(86, 10);    // Лямбда коррекция (H)	
+    draw_battery_h(86, 22);    // Напряжение сети (H)	
+    draw_angle_h(86, 32);    // УОЗ (H)	
+    draw_fuel_f(86, 44);    // Израсходованное топливо (F)	
+	// ========================== Блоки данных ==========================
 
-	// УОЗ и давление
-	draw_map_airtemp(44, 0);
-	// Положение педали газа и РХХ
-	draw_trottle(44, 22);
-	// Средний расход топлива
-	draw_afc(44, 44);
-
-	// УДК
-	draw_O2_sensor(86, 0);
-	// Напряжение батареи
-	draw_angle_batt(86, 22); 
-	// Израсходованное топливо
-	draw_fuel(86, 44);
 
 	// Линии разметки
 	u8g2.drawHLine(0, 21, 128);
 	u8g2.drawHLine(0, 43, 128);
-	u8g2.drawVLine(43, 0, 64);
+	u8g2.drawVLine(42, 0, 64);
 	u8g2.drawVLine(85, 0, 64);
 
 	// Рамка при появлении ошибок CE
@@ -1135,18 +1216,20 @@ void lcd_acceleration() {
 						u8g2.drawUTF8(75 - L, 55 + u8g2.getAscent() / 2, CharVal);
 					}
 				}
-				// Скорость
-				draw_speed(81, 0, SPD);
-				// Давление
-				draw_map(81, 22);
-				// Температура
-				draw_water_temp(82, 44, 7);
+
+				// ========================== Блоки данных ==========================
+			    draw_speed_f(86, 0);    // Скорость (F)	
+				
+			    draw_map_f(86, 22);    // ДАД (F)	
+				
+			    draw_water_temp_f(86, 44);    // Температура ОЖ (F)	
+				// ========================== Блоки данных ==========================
 
 				// Линии разметки
-				u8g2.drawHLine(80, 21, 48);
-				u8g2.drawHLine(80, 43, 48);
-				u8g2.drawVLine(80, 0, 64);
-				
+				u8g2.drawHLine(86, 21, 42);
+				u8g2.drawHLine(86, 43, 42);
+				u8g2.drawVLine(85, 0, 64);
+
 				// Отсылаем данные на дисплей
 				u8g2.sendBuffer();
 			}
@@ -1320,7 +1403,11 @@ void setup() {
 		display.showNumberDec(0, false);
 	#endif
 	
-	//write_eeprom();
+	#ifdef EEPROM_CLEAR_ON_START
+		for (int i = 0; i < EEPROM.length(); i++) {
+			EEPROM.write(i, 0);
+		}
+	#endif
 	draw_init(23, 0);
 }
 
