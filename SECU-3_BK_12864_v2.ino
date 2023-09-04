@@ -129,6 +129,10 @@
 					Изменен алгоритм расчета скорости, пробега и израсходованного топлива.
 					Теперь коэффициент коррекции расхода топлива можно настраивать
 					на экране разгона аналогично яркости экрана.
+	2023-08-27 - Исправил ошибки при работе с энкодером.
+					Добавил возможность сброса EEPROM при старте БК с помощью удержания
+					кнопки "Вправо".
+					При удержание кнопки "Влево" в EEPROM запишутся значения из прошивки.
 
 	ПЛАН:
 	 - Дисплей на MAX7219.
@@ -156,15 +160,19 @@
 
 // Запись значений пробега и расхода, если случайно затер или при замене платы.
 // Расход топлива храниться в мл, потому надо умножать литры на 1000.
-// Раскомментировать, прошить, закомментировать и прошить.
+
+// Для записи в EEPROM указанных ниже значений при запуске БК держать кнопку "Влево".
+
+// При варианте с энкодером раскомментировать строку ниже, прошить,
+// закомментировать и прошить.
 //#define WRITE_EEPROM_ON_START
 
-// 18.04.2023
+// 27.08.2023
 // Раскомментировать параметры, которые необходимо записать в EEPROM	 
-#define WRITE_DISTANCE_DAY 54.3
-#define WRITE_DISTANCE_ALL 18949.0
-#define WRITE_FUEL_BURNED_DAY 6.9 * 1000.0
-#define WRITE_FUEL_BURNED_ALL 1671 * 1000.0
+#define WRITE_DISTANCE_DAY 139.9
+#define WRITE_DISTANCE_ALL 22673.0
+#define WRITE_FUEL_BURNED_DAY 12.1 * 1000.0
+#define WRITE_FUEL_BURNED_ALL 1974 * 1000.0
 
 //#define WRITE_ENGINE_HOURS 100.0 * 3600
 
@@ -183,11 +191,9 @@
 Для этого можно предварительно залить пример для работы с EEPROM
 "eeprom_clear" из Arduino IDE, после чего залить уже код БК.
 
-Или раскомментировать строку ниже, прошиться, 
-закомментировать обратно и прошить заново.
+Или же при запуске БК просто держать кнопку "Вправо".
 */
 
-//#define EEPROM_CLEAR_ON_START
 
 // Подключение дополнительных файлов.
 #include "CE_Errors.h"
@@ -437,73 +443,74 @@ void draw_lcd_main() { // 0
 	// Очищаем память дисплея
 	if (ScreenChange == 0) {u8g2.clearBuffer();}
 
-	  // ========================== Блоки данных ==========================
-    draw_ff_fc_f(0, 0);    // Мгновенный расход топлива (F)  
-  
-    draw_battery_f(0, 22);    // Напряжение сети (F)  
-  
-    draw_distance_f(0, 44);    // Суточный и общий пробег (F) 
-  
-    draw_water_temp_f(43, 0);    // Температура ОЖ (F)  
-  
-    draw_airtemp_f(43, 22);    // Температура воздуха на впуске (F) 
-  
-    draw_fuel_burned_f(43, 44);    // Израсходованное топливо (F) 
-  
-    draw_O2_sensor_f(86, 0);    // Напряжение УДК / AFR (F) 
-  
-    draw_lambda_corr_f(86, 22);    // Лямбда коррекция (F)  
-  
-    draw_afc_f(86, 44);    // Средний расход топлива суточный и общий (F) 
-  // ========================== Блоки данных ==========================
+	// ========================== Блоки данных ==========================
+    draw_ff_fc_f(0, 0);    // Мгновенный расход топлива (F)	
+	
+    draw_water_temp_f(0, 22);    // Температура ОЖ (F)	
+	
+    draw_distance_f(0, 44);    // Суточный и общий пробег (F)	
+	
+    draw_map_f(43, 0);    // ДАД (F)	
+	
+    draw_trottle_f(43, 22);    // ДПДЗ / РХХ (F)	
+	
+    draw_afc_f(43, 44);    // Средний расход топлива суточный и общий (F)	
+	
+    draw_O2_sensor_h(86, 0);    // Напряжение УДК / AFR (H)	
+    draw_lambda_corr_h(86, 10);    // Лямбда коррекция (H)	
+    draw_airtemp_h(86, 22);    // Температура воздуха на впуске (H)	
+    draw_battery_h(86, 32);    // Напряжение сети (H)	
+    draw_fuel_burned_f(86, 44);    // Израсходованное топливо (F)	
+	// ========================== Блоки данных ==========================
 
 
-  // Линии разметки
-  u8g2.drawHLine(0, 21, 128);
-  u8g2.drawHLine(0, 43, 128);
-  u8g2.drawVLine(42, 0, 64);
-  u8g2.drawVLine(85, 0, 64);
+	// Линии разметки
+	u8g2.drawHLine(0, 21, 128);
+	u8g2.drawHLine(0, 43, 128);
+	u8g2.drawVLine(42, 0, 64);
+	u8g2.drawVLine(85, 0, 64);
 
-  // Рамка при появлении ошибок CE
-  if (StatusCE > 0 && AlarmBoxState > 0) {
-    u8g2.drawFrame(0, 0, 128, 64);
-    StatusCE = 0;
-  }
-  
-  // Блок параметра яркости БК
-  draw_config_box();
+	// Рамка при появлении ошибок CE
+	if (StatusCE > 0 && AlarmBoxState > 0) {
+		u8g2.drawFrame(0, 0, 128, 64);
+		StatusCE = 0;
+	}
+	
+	// Блок параметра яркости БК
+	draw_config_box();
 
-  // Проверка ДАДМ
-  oil_pressure_state(1);
+	// Проверка ДАДМ
+	oil_pressure_state(1);
 
-  // Отсылаем данные на дисплей
-  if (ScreenChange == 0) {u8g2.sendBuffer();}
+	// Отсылаем данные на дисплей
+	if (ScreenChange == 0) {u8g2.sendBuffer();}
 }
 
 // Второй экран
 void draw_lcd_second() { // 0 
-  // Очищаем память дисплея
-  if (ScreenChange == 0) {u8g2.clearBuffer();}
+	// Очищаем память дисплея
+	if (ScreenChange == 0) {u8g2.clearBuffer();}
 
-  // ========================== Блоки данных ==========================
-    draw_inj_duty_f(0, 0);    // Загрузка форсунок (F)  
-  
-    draw_trottle_f(0, 22);    // ДПДЗ / РХХ (F) 
-  
-    draw_engine_hours_f(0, 44);    // Счетчик моточасов (F) 
-  
-    draw_map_f(43, 0);    // ДАД (F)  
-  
-    draw_air_map_index_f(43, 22);    // Номер расхода воздуха (F) 
-  
-    draw_rpm_f(43, 44);    // Обороты (F) 
-  
-    draw_angle_h(86, 0);    // Текущий УОЗ (H)  
-  
-    draw_egt_f(86, 22);    // Температура выхлопных газов (F) 
-  
-    draw_speed_f(86, 44);    // Скорость (F)  
-  // ========================== Блоки данных ==========================
+	// ========================== Блоки данных ==========================
+    draw_rpm_f(0, 0);    // Обороты (F)	
+	
+    draw_speed_f(0, 22);    // Скорость (F)	
+	
+    draw_water_temp_f(0, 44);    // Температура ОЖ (F)	
+	
+    draw_map_f(43, 0);    // ДАД (F)	
+	
+    draw_airtemp_h(43, 22);    // Температура воздуха на впуске (H)	
+    draw_angle_h(43, 32);    // Текущий УОЗ (H)	
+    draw_fan_pwm_f(43, 44);    // Вентилятор охлаждения % ШИМ (F)	
+	
+    draw_O2_sensor_f(86, 0);    // Напряжение УДК / AFR (F)	
+	
+    draw_inj_duty_f(86, 22);    // Загрузка форсунок (F)	
+	
+    draw_salon_temp_f(86, 44);    // Датчик температуры DS18B20 (F)	
+	// ========================== Блоки данных ==========================
+
 	// Линии разметки
 	u8g2.drawHLine(0, 21, 128);
 	u8g2.drawHLine(0, 43, 128);
@@ -578,7 +585,6 @@ void lcd_ce_errors() { // 36
 				EncoderState = 0;
 			}
 		#endif
-
 		// Перелистывание ошибок
 		if (ButtonState[0] == 32) {StartRow = max(0, StartRow - 1);}
 		if (ButtonState[1] == 32) {if (OverRow > 0) {StartRow += 1;}}
@@ -1775,7 +1781,7 @@ void read_eeprom() {
 }
 
 // Запись EEPROM
-void write_eeprom() { // 16
+void write_eeprom(byte OverWrite = 0) { // 16
 	#ifdef DEBUG_MODE
 		Serial.println(F("Write EEPROM"));
 	#endif
@@ -1786,7 +1792,7 @@ void write_eeprom() { // 16
 	float Fuel = FuelBurned + FuelBurnedRide;
 	float FuelAll = FuelBurnedAll + FuelBurnedRide;
 
-	#ifdef WRITE_EEPROM_ON_START
+	if (OverWrite) {
 		#ifdef WRITE_DISTANCE_DAY
 			Dst = WRITE_DISTANCE_DAY;
 		#endif
@@ -1814,7 +1820,7 @@ void write_eeprom() { // 16
 		#ifdef WRITE_BRIGHT_PWM_DAY
 			BrightPWM[0] = WRITE_BRIGHT_PWM_DAY;
 		#endif
-	#endif
+	}
 
     // Пробег суточный
     eeprom_write_float(0, Dst); // 0-3
@@ -2697,18 +2703,25 @@ void setup() { // 0
 		analogWrite(FUEL_TANK_LOW_LEVEL_PIN, 0);
 	#endif
 
-	// Очистка EEPROM
-	#ifdef EEPROM_CLEAR_ON_START
+	// Очистка EEPROM при зажатой кнопке "Вправо"
+	if (!digitalRead(BUTTON_RIGHT_PIN)) {
 		for (int i = 0; i < EEPROM.length(); i++) {eeprom_write_byte(i, 0);}
-	#endif
+	}
 
 	// Считываем данные из EEPROM
 	read_eeprom();
 
-	// Запись значений пробега и расхода
-	#ifdef WRITE_EEPROM_ON_START
-		write_eeprom();
-		read_eeprom();
+	// Запись значений пробега и расхода при зажатой кнопке "Влево"
+	#ifndef ENCODER_CONTROL
+		if (!digitalRead(BUTTON_LEFT_PIN)) {
+			write_eeprom(1);
+			read_eeprom();
+		}
+	#else
+		#ifdef WRITE_EEPROM_ON_START
+			write_eeprom(1);
+			read_eeprom();
+		#endif
 	#endif
 
 	// Пин управления колокольчиком
