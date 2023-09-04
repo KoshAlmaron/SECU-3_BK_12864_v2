@@ -31,8 +31,12 @@
 	==================================================================================================
 		Переход на версию 2
 	==================================================================================================
-	2021-10-05 - 
-
+	2021-10-06 - Разбил все показания на экране на отдельные блоки. Сделал конфигуратор экрана в Excel.
+	2021-10-07 - Добавил блоки для отображения: 
+					- обороты (F),
+					- уровень топлива (F), 
+					- EGT (F),
+					- Давление масла (F).
 
 	0 - Прием данных от SECU
 	1 - 
@@ -131,6 +135,19 @@
 #define BATT_VOLT_MIN 12.0
 #define BATT_VOLT_MAX 14.5
 
+// Порог значений оборотов
+#define RPM_LIMIT 5500
+
+// Резерв топлива
+#define FUEL_TANK_MIN 10
+
+// Порог значений температуры выхлопных газов
+#define EGT_LIMIT 850
+
+// Порог значений давления масла
+#define OIL_PRESSURE_MIN 1.0
+#define OIL_PRESSURE_MAX 5.0
+
 // Скорость обновления экрана (пауза между обновлениями в мс)
 #define LCD_UPDATE_DELAY 400
 
@@ -148,9 +165,8 @@ unsigned long LCDTimer = 0;
 char BoxState = 0;
 
 //  Массив байтов от SECU и флаг успешного получения данных
-//byte Data[DATA_ARRAY_SIZE + 2];
 byte DataOk = 0;
-byte Data[DATA_ARRAY_SIZE + 2];
+byte Data[81 + 2];
 
 // В глобальных переменных только дистанция для использования в прерывании
 float DIST = 0.0;       // (29-31)  Дистанция
@@ -527,6 +543,10 @@ const unsigned char Trollface_bits[] PROGMEM = {
 #define Cels_height 3
 const unsigned char Cels_bits[] PROGMEM = {0x02, 0x05, 0x02};
 
+#define Cels2_width 4
+#define Cels2_height 4
+const unsigned char Cels2_bits[] PROGMEM = {0x06, 0x09, 0x09, 0x06};
+
 #define Temp_width 8
 #define Temp_height 15
 const unsigned char Temp_bits[] PROGMEM = {
@@ -591,12 +611,27 @@ const unsigned char Batt_bits[] PROGMEM = {
 	0x8c, 0x01, 0xff, 0x07, 0x01, 0x04, 0x09, 0x04, 0xdd, 0x05, 0x09, 0x04,
 	0x01, 0x04, 0xff, 0x07 };
 
-#define Fuel_width 12
-#define Fuel_height 15
-const unsigned char Fuel_bits[] PROGMEM = {
+#define FuelTank_width 12
+#define FuelTank_height 15
+const unsigned char FuelTank_bits[] PROGMEM = {
 	0xfe, 0x00, 0x82, 0x06, 0x82, 0x0c, 0x82, 0x08, 0x82, 0x0b, 0x82, 0x0a,
 	0xfe, 0x0a, 0xfe, 0x0a, 0xfe, 0x0a, 0xfe, 0x0a, 0xfe, 0x0a, 0xfe, 0x0a,
 	0xfe, 0x0e, 0xfe, 0x00, 0xff, 0x01 };
+
+#define FuelCanister_width 10
+#define FuelCanister_height 15
+const unsigned char FuelCanister_bits[] PROGMEM = {
+   0xf2, 0x01, 0x09, 0x02, 0xe4, 0x02, 0x02, 0x02, 0x01, 0x02, 0x01, 0x02,
+   0x85, 0x02, 0x49, 0x02, 0x31, 0x02, 0x31, 0x02, 0x49, 0x02, 0x85, 0x02,
+   0x01, 0x02, 0x01, 0x02, 0xfe, 0x01 };
+
+#define OilPressure_width 11
+#define OilPressure_height 17
+const unsigned char OilPressure_bits[] PROGMEM = {
+   0x91, 0x03, 0x49, 0x04, 0x45, 0x00, 0x43, 0x06, 0x45, 0x04, 0x49, 0x04,
+   0x91, 0x03, 0x00, 0x00, 0xff, 0x07, 0x00, 0x00, 0x4e, 0x04, 0xd1, 0x06,
+   0x41, 0x05, 0x41, 0x04, 0x41, 0x04, 0x51, 0x04, 0x4e, 0x04 };
+
 
 #define SPD_width 11
 #define SPD_height 17
@@ -969,12 +1004,12 @@ void draw_angle_h(byte x, byte y) {
 	u8g2.drawXBMP(41 - 4 + x, y + 2, Cels_width, Cels_height, Cels_bits);
 }
 
-void draw_fuel_f(byte x, byte y) {
+void draw_fuel_burned_f(byte x, byte y) {
 	char CharVal[6];
 	byte H;
 	byte L;
 
-	u8g2.drawXBMP(x + 1, y + 3, Fuel_width, Fuel_height, Fuel_bits);
+	u8g2.drawXBMP(x + 2, y + 3, FuelCanister_width, FuelCanister_height, FuelCanister_bits);
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
@@ -1031,6 +1066,93 @@ void draw_speed_f(byte x, byte y) {
 	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
 }
 
+void draw_rpm_f(byte x, byte y) {
+	int RPM = build_int(1);
+	RPM = constrain(RPM, 0, 9999);
+	RPM = trunc(RPM * 0.1) * 10;
+	char CharVal[5];
+	byte H;
+	byte L;
+
+	if (BoxState > 0) {
+		if  (RPM > RPM_LIMIT) {
+			u8g2.drawBox(x + 1, y + 1, 40, 19);
+		}
+	}
+	u8g2.setFont(u8g2_font_helvB12_tn);
+	H = u8g2.getAscent();
+	dtostrf(RPM, 4, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
+}
+
+void draw_egt_f(byte x, byte y) {
+	float EGT = (float) build_int(75 + V49_DATA_SHIFT) * 0.25;            // 4
+	EGT = constrain(EGT, 0, 1999);
+	EGT = trunc(EGT * 0.1) * 10;
+
+	char CharVal[5];
+	byte H;
+	byte L;
+
+	if (BoxState > 0) {
+		if  (EGT > EGT_LIMIT) {
+			u8g2.drawBox(x + 1, y + 1, 40, 19);
+		}
+	}
+	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(EGT, 4, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 6 - L + x, y + 10 + H/2, CharVal);
+	u8g2.drawXBMP(41 - 5 + x, y + 5, Cels2_width, Cels2_height, Cels2_bits);
+}
+
+void draw_fuel_tank_f(byte x, byte y) {
+	float FTLS = (float) build_int(73 + V49_DATA_SHIFT) * 0.015625;            // 64
+	FTLS = constrain(FTLS, 0, 333);
+	byte H;
+	byte L;
+	char CharVal[4];
+	if (BoxState > 0) {
+		if (FTLS < FUEL_TANK_MIN) {
+			u8g2.drawBox(x + 1, y + 1, 40, 19);
+		}
+	}
+
+	u8g2.drawXBMP(x + 1, y + 3, FuelTank_width, FuelTank_height, FuelTank_bits);
+	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(FTLS, 3, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 3 - L + x, y + 10 + H/2, CharVal);
+}
+
+void draw_oil_pressure_f(byte x, byte y) {
+	float OPS = (float) build_int(77 + V49_DATA_SHIFT) * 0.015625;            // 64
+	OPS = constrain(OPS, 0, 9.9);
+
+	byte H;
+	byte L;
+	OPS = 0.9;
+	char CharVal[4];
+	if (BoxState > 0) {
+		if (OPS < OIL_PRESSURE_MIN || OPS > OIL_PRESSURE_MAX ) {
+			u8g2.drawBox(x + 1, y + 1, 40, 19);
+		}
+	}
+
+	u8g2.drawXBMP(x + 2, y + 2, OilPressure_width, OilPressure_height, OilPressure_bits);
+	u8g2.setFont(u8g2_font_helvB12_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(OPS, 3, 1, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
+}
+
 void draw_rpm_tm1637() {
 	int RPM = build_int(1);
 	RPM = constrain(RPM, 0, 9999);
@@ -1076,7 +1198,8 @@ void lcd_main() {
     draw_lambda_corr_h(86, 10);    // Лямбда коррекция (H)	
     draw_battery_h(86, 22);    // Напряжение сети (H)	
     draw_angle_h(86, 32);    // УОЗ (H)	
-    draw_fuel_f(86, 44);    // Израсходованное топливо (F)	
+    draw_fuel_burned_f(86, 44);    // Израсходованное топливо (F)	
+
 	// ========================== Блоки данных ==========================
 
 
