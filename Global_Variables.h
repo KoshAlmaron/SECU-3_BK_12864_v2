@@ -59,6 +59,7 @@ unsigned long RideTimer = 0;
 
 // Уровень топлива
 float FuelTankLevel = -1.0;
+// Статус лампы аварийного уровня топлива
 byte FuelTankState = 0;
 
 // Энкодер

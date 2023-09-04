@@ -114,7 +114,9 @@
 	2022-02-07 - Исправил ошибку со случайным срабатыванием длинного нажатия при
 					анимиции смены экрана.
 	2022-02-25 - Изменил анимацию смены экранов.
+				- Добавил программный сброс при повторном запуске БК до отключения питания.
 	2022-02-27 - Добавил проверку контрольной суммы для пакета данных.
+	2022-06-06 - Добавил большой блок уровня ШИМ вентилятора охлаждения.
 
 	ПЛАН:
 	 - Дисплей на MAX7219.
@@ -143,11 +145,12 @@
 // Расход топлива храниться в мл, потому надо умножать литры на 1000.
 // Раскомментировать, прошить, закомментировать и прошить.
 //#define WRITE_EEPROM_ON_START
-#define WRITE_DISTANCE_DAY 45.8
-#define WRITE_DISTANCE_ALL 8621.0
-#define WRITE_FUEL_BURNED_DAY 4.2 * 1000.0
-#define WRITE_FUEL_BURNED_ALL 729.0 * 1000.0
-#define WRITE_ENGINE_HOURS 42.6 * 3600
+
+#define WRITE_DISTANCE_DAY 10.4
+#define WRITE_DISTANCE_ALL 10339.0
+#define WRITE_FUEL_BURNED_DAY 0.9 * 1000.0
+#define WRITE_FUEL_BURNED_ALL 883.0 * 1000.0
+#define WRITE_ENGINE_HOURS 72.0 * 3600
 
 #define WRITE_BRIGHT_LCD_NIGHT 0
 #define WRITE_BRIGHT_LCD_DAY 255
@@ -177,8 +180,6 @@
 #include "Pictograms.h"
 #include "microOneWire.h"
 
-//29244 1749
-
 // Настройка LCD дисплея
 
 // Обычный на чипе ST7920
@@ -195,8 +196,8 @@ U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI u8g2(U8G2_R0, SPI_CS_PIN, SPI_DC_PIN);
 //=============================================================================
 // Экран приветствия
 void draw_init() {
-	#define STEP_DELAY_TM1637 90
-	#define STEP_DELAY_LCD 35
+	#define STEP_DELAY_TM1637 80
+	#define STEP_DELAY_LCD 25
 
 	#ifdef AUTO_BRIGHT_ENABLE
 		BrightMode = 2;
@@ -429,24 +430,23 @@ void draw_lcd_second() { // 0
 	if (ScreenChange == 0) {u8g2.clearBuffer();}
 
 	// ========================== Блоки данных ==========================
-	draw_rpm_f(0, 0);    // Обороты (F)	
-
-	draw_speed_f(0, 22);    // Скорость (F)	
-
-	draw_engine_hours_f(0, 44);    // Счетчик моточасов (F)	
-
-	draw_map_f(43, 0);    // ДАД (F)	
-
-	draw_airtemp_h(43, 22);    // Температура воздуха на впуске (H)	
-	draw_angle_h(43, 32);    // Текущий УОЗ (H)	
-	draw_salon_temp_f(43, 44);    // Датчик температуры DS18B20 (F)	
-
-	draw_O2_sensor_f(86, 0);    // Напряжение УДК / AFR (F)	
-
-	draw_inj_duty_f(86, 22);    // Загрузка форсунок (F)	
-
-	draw_lambda_corr_f(86, 44);    // Лямбда коррекция (F)	
-
+    draw_rpm_f(0, 0);    // Обороты (F)	
+	
+    draw_speed_f(0, 22);    // Скорость (F)	
+	
+    draw_water_temp_f(0, 44);    // Температура ОЖ (F)	
+	
+    draw_map_f(43, 0);    // ДАД (F)	
+	
+    draw_airtemp_h(43, 22);    // Температура воздуха на впуске (H)	
+    draw_angle_h(43, 32);    // Текущий УОЗ (H)	
+    draw_fan_pwm_f(43, 44);    // Вентилятор охлаждения % ШИМ (F)	
+	
+    draw_O2_sensor_f(86, 0);    // Напряжение УДК / AFR (F)	
+	
+    draw_inj_duty_f(86, 22);    // Загрузка форсунок (F)	
+	
+    draw_lambda_corr_f(86, 44);    // Лямбда коррекция (F)	
 	// ========================== Блоки данных ==========================
 
 	// Линии разметки
@@ -757,7 +757,7 @@ void draw_ff_fc_f(byte x, byte y) { // 22
 	float FF_FRQ = (float) build_unsigned_int(32 + DataShift) * 0.00390625;  // 256
 
 	// Мгновенный расход л/ч
-	FF_FRQ = (float) FF_FRQ * 0.225; // (3600 / 16000)
+	FF_FRQ = (float) FF_FRQ * 0.225 * FUEL_CONSUMPTION_RATIO; // (3600 / 16000)
 	FF_FRQ = constrain(FF_FRQ, 0, 99);
 
 	// Режим отображения, 1 - л/ч, 2 - л/100км
@@ -1461,6 +1461,21 @@ void draw_engine_hours_f(byte x, byte y) { // 13
 	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
 }
 
+void draw_fan_pwm_f(byte x, byte y) {
+	byte FanPWM = Data[84] / 2;
+	char CharVal[4] = {};
+	byte H = 0;
+	byte L = 0;
+
+	u8g2.drawXBMP(x + 2, y + 2, FAN_width, FAN_height, FAN_bits);
+	u8g2.setFont(u8g2_font_helvB12_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(FanPWM, 3, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 3 - L + x, y + 10 + H/2, CharVal);
+}
+
 #ifdef TEMP_SENSOR_PIN
 void draw_salon_temp_f(byte x, byte y) {
 	byte Data[9];
@@ -1473,6 +1488,9 @@ void draw_salon_temp_f(byte x, byte y) {
 	    	// Запуск измерения
 	        oneWire_write(0x44, TEMP_SENSOR_PIN);
 	        TempSensorStatus = 1;
+	    }
+	    else if (TempSensorStatus < 6) {
+	    	TempSensorStatus++;
 	    }
 	    else {
 	    	// Запрос температуры
@@ -1500,7 +1518,6 @@ void draw_salon_temp_f(byte x, byte y) {
 	u8g2.drawUTF8(41 - 6 - L + x, y + 11 + H/2, CharVal);
 
 	u8g2.drawXBMP(41 - 5 + x, y + 3, Cels2_width, Cels2_height, Cels2_bits);
-
 }
 #endif
 
@@ -2169,6 +2186,8 @@ void power_off() {
 	// Отключаем питание
 	digitalWrite(POWER_RELAY_PIN, LOW);
 
+	delay(250);
+
 	// Этот кусок на тот случай, если выключить зажигания и сразу включить обратно
 	while (!digitalRead(INT_IGN_PIN)) {
 		delay(250);
@@ -2176,9 +2195,6 @@ void power_off() {
 
 	// Перезапускаем код БК
 	resetFunc();
-
-	digitalWrite(POWER_RELAY_PIN, HIGH);
-	power_on();
 }
 
 void power_n_light_status() {
