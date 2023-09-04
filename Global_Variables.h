@@ -6,14 +6,13 @@
 
 //  Массив байтов от SECU и флаг успешного получения данных
 byte DataOk = 0;
-byte Data[MAX_DATA_SIZE + 2];
+byte Data[MAX_DATA_SIZE + 2] = {};
 
 // Размер пакета данных
 byte DataSize = 0;
 
 // Смещение данных после расширения блока CE
 byte DataShift = 0;
-#define MAX_CE_BITS_COUNT 21
 
 // Таймер для изменения яркости
 unsigned long BrightTimer = 0;
@@ -22,16 +21,17 @@ unsigned long BrightTimer = 0;
 byte BrightMode = 0;
 
 // Яркость подсветки дисплея, 0 - день, 1 - ночь, 2 - буфер для перехода
-byte BrightLCD[3];
+byte BrightLCD[3] = {};
+
+// ШИМ подсветка приборной панели.
+byte BrightPWM[3] = {};
+
 // Таймер для блока отображения яркости
 char BrightBoxState = 0;
 // Таймеры для дисплея
 unsigned long LCDTimer = 0;
 // Таймер для бокса инверсии 
 char AlarmBoxState = 0;
-
-// ШИМ подсветка приборной панели.
-byte BrightPWM[3];
 
 // Пройденное расстояние в км за время работы
 float DIST = 0.0;       // (29-31)  Дистанция
@@ -59,37 +59,50 @@ unsigned long RideTimer = 0;
 
 // Уровень топлива
 float FuelTankLevel = -1.0;
+byte FuelTankState = 0;
 
 // Энкодер
-char EncoderState = 0;
+#ifdef ENCODER_CONTROL
+	char EncoderState = 0;
+#endif
+	
 // Состояние кнопок (0 - не нажата, 1 - нажата, 2 - обработана)
-byte ButtonState[4]; // Ввер/внизх, влево/вправо
+byte ButtonState[4] = {}; // Ввер/внизх, влево/вправо
 // Таймер для кнопки.
-unsigned long ButtonTimer;
+unsigned long ButtonTimer = 0;
 // Номер активного экрана
-byte LCDMode = 0;
-// Номк экрана ошибок CE
+byte ScreenMode = 0;
+// Флаг смены экрана
+char ScreenChange = 0;
+
+// Номер экрана ошибок CE
 #define LCD_MODE_CE 3
 
 #ifdef SPEED_CHIME_PIN
-// Состояние колокольчика AE86
-byte SpeedChimeStatus = 0;
-// Таймер для колокольчика
-unsigned long SpeedChimeTimer = 0;
+	// Состояние колокольчика AE86
+	byte SpeedChimeStatus = 0;
+	// Таймер для колокольчика
+	unsigned long SpeedChimeTimer = 0;
+#endif
+
+// Датчик температуры DS18B20
+#ifdef TEMP_SENSOR_PIN
+	byte TempSensorStatus = 0;
+	int TempSensorValue = 0;
 #endif
 
 // Наличие ошибок CE
 byte StatusCE = 0;
 // Количество ошибок
-#define CE_COUNT_MAX 24
-byte CountCE[24];
+#define MAX_CE_BITS_COUNT 24
+byte CountCE[MAX_CE_BITS_COUNT] = {};
 // Предыдущее состояние
-uint32_t PrevCE;
+uint32_t PrevCE = 0;
 
 #ifdef TM1637_ENABLE
 	TM1637Display Display7S(TM1637_CLK_PIN, TM1637_DIO_PIN); // 28 байт
 	// Буфер для перехода яркость подсветки
-	byte TM1637Bright;
+	byte TM1637Bright = 0;
 #endif
 
 #ifdef DEBUG_MODE
