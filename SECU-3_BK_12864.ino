@@ -12,6 +12,7 @@
 						 - Добавил пороги для напряжения.
 						 - Добавил возможность выбора числа импульсов датчика 
 								скорости на 1 км.
+	2021-02-19 - Добавил экран замера разгона 0-100.
 
 
 	0 - Прием данных от SECU
@@ -98,10 +99,9 @@ char BoxState = 0;
 // В глобальных переменных только дистанция для использования в прерывании
 float DIST = 0.0;       // (29-31)  Дистанция
 
-// Расчет израсходованного топлива
+// Переменные расчета и для хранения пробега и израсходованного топлива
+unsigned long FuelTimer = 0;
 float PrevFF_FRQ = 0.0;
-
-// Переменные для хранения пробега и израсходованного топлива
 // Суточные
 float Distance = 0.0;
 float FuelBurned = 0.0;
@@ -118,6 +118,8 @@ char EncoderState = 0;
 byte ButtonState = 0;
 // Таймер для кнопки.
 byte ButtonTimer = 0;
+// Номер активного экрана
+byte LCDMode = 0;
 
 // Яркость подсветки
 byte Bright;
@@ -267,9 +269,85 @@ float build_distance(byte i) {
 
 // Сборка данных из байтов от SECU
 void build_data() {
-	// Собираем данные по байтам.
 	if (DataOk) {
-		DIST = build_distance(29 + V49_DATA_SHIFT);
+		if (millis() - FuelTimer >= 500) {
+			DIST = build_distance(29 + V49_DATA_SHIFT);
+
+			// Расчет израсходованного топлива за интервал
+			float FF_FRQ = (float) build_int(32 + V49_DATA_SHIFT) * 0.00390625;  // 256
+			if (FuelTimer > 0) {
+				float FFAVG = (float) (PrevFF_FRQ + FF_FRQ) * 0.1125; // Расход л/ч (3600 / 16000) / 2
+				FuelBurned += (float) FFAVG * (millis() - FuelTimer) / 3600000;
+				FuelBurnedAll += (float) FFAVG * (millis() - FuelTimer) / 3600000;
+			}
+			FuelTimer = millis();
+			PrevFF_FRQ = FF_FRQ;
+		}
+	}
+}
+
+void button_update() {
+	// ButtonState 0 - выкл, 1 - короткое включение, 2 - исполнено,
+	//             3 - длинное включение, 5 - первый контакт.
+	if (!digitalRead(ENCODER_PIN_C)) {
+		if (ButtonState == 0) {
+			ButtonState = 5;
+			ButtonTimer = 0;
+		}
+	}
+	else {
+		if (ButtonState == 2) {
+			if (ButtonTimer >= 1) {
+				ButtonState = 0;
+			}
+		}
+		else if (ButtonState == 5) {
+			if (ButtonTimer >= 4) {
+				ButtonState = 3;
+			}
+			else {
+				ButtonState = 1;
+			}
+			ButtonTimer = 0;
+		}
+	}
+}
+
+void encoder_update() {
+	boolean PinState[2];
+	PinState[0] = digitalRead(ENCODER_PIN_A);
+	PinState[1] = digitalRead(ENCODER_PIN_B);
+
+	// Начальная позиция 11.
+	if (PinState[0] && PinState[1]) {
+		// Если переход на начальную позицию после шага 3,
+		// то выполняем комманду.
+		if (abs(EncoderState) == 3) {
+			Bright = max(MIN_BRIGHT, min(255, Bright + EncoderState / abs(EncoderState) * 2));
+			analogWrite(BRIGHT_PIN, Bright);
+		}
+		EncoderState = 0;
+	}
+	// Первый шаг.
+	if (EncoderState == 0) {
+		// 10 +.
+		if (PinState[0] && !PinState[1]) {EncoderState += 1;}
+		// 01 -.
+		if (!PinState[0] && PinState[1]) {EncoderState -= 1;}
+	}
+	// Второй шаг.
+	if (abs(EncoderState) == 1) {
+		// 00 *2.
+		if (!PinState[0] && !PinState[1]) {EncoderState = EncoderState * 2;}  
+	}
+	// Третий шаг.
+	if (EncoderState == 2) {
+		// 01 +.
+		if (!PinState[0] && PinState[1]) {EncoderState += 1;}  
+	}
+	if (EncoderState == -2) {
+		// 10 -.
+		if (PinState[0] && !PinState[1]) {EncoderState -= 1;}  
 	}
 }
 
@@ -412,50 +490,19 @@ const unsigned char Fuel_bits[] PROGMEM = {
 	0xfe, 0x0a, 0xfe, 0x0a, 0xfe, 0x0a, 0xfe, 0x0a, 0xfe, 0x0a, 0xfe, 0x0a,
 	0xfe, 0x0e, 0xfe, 0x00, 0xff, 0x01 };
 
-void lcd_update() {
-	float FF_FRQ = (float) build_int(32 + V49_DATA_SHIFT) * 0.00390625;  // 256
-	// Расчет израсходованного топлива за интервал
-	if (LCDTimer > 0) {
-		float FFAVG = (float) (PrevFF_FRQ + FF_FRQ) * 0.1125; // Расход л/ч (3600 / 16000) / 2
-		FuelBurned += (float) FFAVG * (millis() - LCDTimer) / 3600000;
-		FuelBurnedAll += (float) FFAVG * (millis() - LCDTimer) / 3600000;
-	}
-	LCDTimer = millis();
-	PrevFF_FRQ = FF_FRQ;
-	// Очищаем память дисплея
-	u8g2.clearBuffer();
+#define SPD_width 11
+#define SPD_height 17
+const unsigned char SPD_bits[] PROGMEM = {
+	0x0e, 0x00, 0x11, 0x00, 0x01, 0x00, 0x0e, 0x00, 0x10, 0x00, 0xd1, 0x03,
+	0x4e, 0x04, 0x40, 0x04, 0xc0, 0x03, 0x40, 0x00, 0x4f, 0x00, 0x51, 0x00,
+	0x11, 0x00, 0x11, 0x00, 0x11, 0x00, 0x11, 0x00, 0x0f, 0x00 };
 
-	// ===Отрисовываем блоки===
-	// Расход топлива
-	draw_ff_fc(0, 0);
-	// Температура
-	draw_water_temp(0, 22);
-	// Пробег
-	draw_distance(0, 44);
-
-	// УОЗ и давление
-	draw_map_airtemp(44, 0);
-	// Положение педали газа и РХХ
-	draw_trottle(44, 22);
-	// Средний расход топлива
-	draw_afc(44, 44);
-
-	// УДК
-	draw_O2_sensor(86, 0);
-	// Напряжение батареи
-	draw_angle_batt(86, 22); 
-	// Израсходованное топливо
-	draw_fuel(86, 44);
-
-	// Линии разметки
-	u8g2.drawHLine(0, 21, 128);
-	u8g2.drawHLine(0, 43, 128);
-	u8g2.drawVLine(43, 0, 64);
-	u8g2.drawVLine(85, 0, 64);
-
-	// Отсылаем данные на дисплей
-	u8g2.sendBuffer();
-}
+#define MAP2_width 11
+#define MAP2_height 17
+const unsigned char MAP2_bits[] PROGMEM = {
+	0xf8, 0x00, 0x04, 0x01, 0x82, 0x02, 0xc1, 0x04, 0x61, 0x04, 0x71, 0x04,
+	0x21, 0x04, 0x01, 0x04, 0x02, 0x02, 0x04, 0x01, 0xf8, 0x00, 0x50, 0x00,
+	0x50, 0x00, 0x50, 0x00, 0xdf, 0x07, 0x00, 0x00, 0xff, 0x07 };
 
 void draw_ff_fc(byte x, byte y) {
 	float FF_FRQ = (float) build_int(32 + V49_DATA_SHIFT) * 0.00390625;  // 256
@@ -500,7 +547,7 @@ void draw_ff_fc(byte x, byte y) {
 	u8g2.drawUTF8(x + 10 + (30 - L), y + 4 + H, CharVal);
 }
 
-void draw_water_temp(byte x, byte y) {
+void draw_water_temp(byte x, byte y, byte a=0) {
 	float TEMP = (float) build_int(7) * 0.25;
 	char CharVal[6];
 	byte H;
@@ -508,7 +555,7 @@ void draw_water_temp(byte x, byte y) {
 
 	if (BoxState > 0) {
 		if (TEMP < WATER_TEMP_MIN || TEMP > WATER_TEMP_MAX) {
-			u8g2.drawBox(x, y + 1, 42, 19);
+			u8g2.drawBox(x, y + 1, 42 + a, 19);
 		}
 	}
 
@@ -518,8 +565,8 @@ void draw_water_temp(byte x, byte y) {
 
 	dtostrf(TEMP, 3, 0, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(x + 8 + (26 - L), y + H + 5, CharVal);
-	u8g2.drawXBMP(x + 8 + 26 + 1, y + 5, Cels_width, Cels_height, Cels_bits);
+	u8g2.drawUTF8(x + 34 - L + a, y + H + 5, CharVal);
+	u8g2.drawXBMP(x + 34 + 1 + a, y + 5, Cels_width, Cels_height, Cels_bits);
 }
 
 void draw_distance(byte x, byte y) {
@@ -733,69 +780,226 @@ void draw_init(byte x, byte y) {
 		analogWrite(BRIGHT_PIN, i);
 	}
 
-	lcd_update();
+	lcd_main();
 	analogWrite(BRIGHT_PIN, Bright);
 }
 
-void button_update() {
-	// ButtonState 0 - выкл, 5 - первый контакт.
-	if (!digitalRead(ENCODER_PIN_C)) {
-		if (ButtonState == 0) {
-			ButtonState = 5;
-			ButtonTimer = 0;
+void draw_map(byte x, byte y) {
+	float MAP = (float) build_int(3) * 0.015625;            // 64
+	char CharVal[6];
+	byte H;
+	byte L;
+
+	if (BoxState > 0) {
+		if (MAP > OVERBOOST_LIMIT) {
+			u8g2.drawBox(x + 1, y + 1, 46, 19);
 		}
 	}
-	else {
-		if (ButtonState == 5) {
-			if (ButtonTimer >= 4) {
-				Distance = -1 * DIST;
-				FuelBurned = 0.0;
-				write_eeprom();
-			}
-			ButtonState = 0;
-			ButtonTimer = 0;
-		}
-		else {
-			ButtonTimer = 0;
-		}
-	}
+
+	u8g2.drawXBMP(x + 2, y + 2, MAP2_width, MAP2_height, MAP2_bits);
+	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(MAP, 3, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(x + 41 - L, y + H + 5, CharVal);
 }
 
-void encoder_update() {
-	boolean PinState[2];
-	PinState[0] = digitalRead(ENCODER_PIN_A);
-	PinState[1] = digitalRead(ENCODER_PIN_B);
+void draw_speed(byte x, byte y, float SPD) {
+	float DDANGLE = (float) build_int(13) * 0.03125;
+	char CharVal[6];
+	byte H;
+	byte L;
 
-	// Начальная позиция 11.
-	if (PinState[0] && PinState[1]) {
-		// Если переход на начальную позицию после шага 3,
-		// то выполняем комманду.
-		if (abs(EncoderState) == 3) {
-			Bright = max(MIN_BRIGHT, min(255, Bright + EncoderState / abs(EncoderState) * 2));
-			analogWrite(BRIGHT_PIN, Bright);
+	if (BoxState > 0) {
+		if  (DDANGLE > 0.1) {
+			u8g2.drawBox(x + 1, y + 1, 46, 19);
 		}
-		EncoderState = 0;
 	}
-	// Первый шаг.
-	if (EncoderState == 0) {
-		// 10 +.
-		if (PinState[0] && !PinState[1]) {EncoderState += 1;}
-		// 01 -.
-		if (!PinState[0] && PinState[1]) {EncoderState -= 1;}
-	}
-	// Второй шаг.
-	if (abs(EncoderState) == 1) {
-		// 00 *2.
-		if (!PinState[0] && !PinState[1]) {EncoderState = EncoderState * 2;}  
-	}
-	// Третий шаг.
-	if (EncoderState == 2) {
-		// 01 +.
-		if (!PinState[0] && PinState[1]) {EncoderState += 1;}  
-	}
-	if (EncoderState == -2) {
-		// 10 -.
-		if (PinState[0] && !PinState[1]) {EncoderState -= 1;}  
+
+	u8g2.drawXBMP(x + 2, y + 2, SPD_width, SPD_height, SPD_bits);
+	u8g2.setFont(u8g2_font_helvB12_tn);
+	H = u8g2.getAscent();
+	dtostrf(SPD, 3, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(x + 43 - L, y + H + 5, CharVal);
+}
+
+void lcd_main() {
+	// Очищаем память дисплея
+	u8g2.clearBuffer();
+
+	// ===Отрисовываем блоки===
+	// Расход топлива
+	draw_ff_fc(0, 0);
+	// Температура
+	draw_water_temp(0, 22);
+	// Пробег
+	draw_distance(0, 44);
+
+	// УОЗ и давление
+	draw_map_airtemp(44, 0);
+	// Положение педали газа и РХХ
+	draw_trottle(44, 22);
+	// Средний расход топлива
+	draw_afc(44, 44);
+
+	// УДК
+	draw_O2_sensor(86, 0);
+	// Напряжение батареи
+	draw_angle_batt(86, 22); 
+	// Израсходованное топливо
+	draw_fuel(86, 44);
+
+	// Линии разметки
+	u8g2.drawHLine(0, 21, 128);
+	u8g2.drawHLine(0, 43, 128);
+	u8g2.drawVLine(43, 0, 64);
+	u8g2.drawVLine(85, 0, 64);
+
+	// Отсылаем данные на дисплей
+	u8g2.sendBuffer();
+}
+
+void lcd_acceleration() {
+	float SPD = 0.0;
+	float PrevSPD = 0.0;
+	unsigned int A30 = 0;
+	unsigned int A60 = 0;
+	unsigned int A100 = 0;
+	unsigned long Timer = millis();
+	byte L = 0;
+	char CharVal[6];
+
+	// Состояния: 0 - не готов к замеру,
+	//						1 - готов к замеру,
+	//						2 - идет замер,
+	//						3 - замер завершен,
+	//						4 - замер не удался.
+	byte Mode = 0;
+
+	while (LCDMode == 1) {
+		button_update();
+		encoder_update();
+		receive_data();
+		build_data();
+
+		if (ButtonState == 3) {
+			ButtonState = 0;
+		}
+
+		// Выход из режима замера разгона
+		if (ButtonState == 1) {
+			LCDMode = 0;
+			ButtonState = 2;
+		}
+
+		if (DataOk) {
+			SPD = build_speed(27 + V49_DATA_SHIFT);
+			//if (Mode == 2) {SPD = min(SPD + 0.001, 120);}
+			// Запуск измерения при скростьи 0 в течение 2 сек.
+			if (Mode == 0) {
+				if (SPD > 0) {
+					Timer = millis();
+				}
+				if (millis() - Timer >= 2000) {
+					Mode = 1;
+				}
+			}
+			if (Mode == 1) {
+				if (SPD > 0) {
+					Mode = 2;
+					Timer = millis();
+				}
+			}
+
+			if (Mode == 2) {
+				if (millis() - Timer >= 65535) {
+					Mode = 4;
+				}
+				else if (SPD >= 30 && PrevSPD < 30) {
+					A30 = millis() - Timer;
+				}
+				else if (SPD >= 60 && PrevSPD < 60) {
+					A60 = millis() - Timer;
+				}
+				else if (SPD >= 100 && PrevSPD < 100) {
+					A100 = millis() - Timer;
+					Mode = 3;
+				}
+			}
+
+			if (millis() - LCDTimer >= 350) {
+				LCDTimer = millis();
+				ButtonTimer = min(255, ButtonTimer + 1);
+				BoxState += 1;
+				if (BoxState > 2) {BoxState = -1;}
+
+				// Очищаем память дисплея
+				u8g2.clearBuffer();
+
+				u8g2.setFont(u8g2_font_courB18_tr);
+				if (Mode == 0) {
+					u8g2.setCursor(9, 32 + u8g2.getAscent() / 2);
+					u8g2.print(F("STOP"));
+				}
+				else if (Mode == 1) {
+					u8g2.setCursor(3, 32 + u8g2.getAscent() / 2);
+					u8g2.print(F("READY"));
+				}
+				else if (Mode == 4) {
+					u8g2.setCursor(4, 32 + u8g2.getAscent() / 2);
+					u8g2.print(F("FAIL!"));
+				}
+				else if (Mode == 2 || Mode == 3) {
+					if (A30 > 0) {
+						u8g2.setFont(u8g2_font_helvB08_tn);
+						u8g2.setCursor(2, 11 + u8g2.getAscent() / 2);
+						u8g2.print(F("0-30:"));
+
+						u8g2.setFont(u8g2_font_helvB10_tn);
+						dtostrf(A30 / 1000.0, 5, 2, CharVal);
+						L = u8g2.getUTF8Width(CharVal);
+						u8g2.drawUTF8(75 - L, 11 + u8g2.getAscent() / 2, CharVal);
+					}
+					if (A60 > 0) {
+						u8g2.setFont(u8g2_font_helvB08_tn);
+						u8g2.setCursor(2, 33 + u8g2.getAscent() / 2);
+						u8g2.print(F("0-60:"));
+
+						u8g2.setFont(u8g2_font_helvB10_tn);
+						dtostrf(A60 / 1000.0, 5, 2, CharVal);
+						L = u8g2.getUTF8Width(CharVal);
+						u8g2.drawUTF8(75 - L, 33 + u8g2.getAscent() / 2, CharVal);
+					}
+					if (A100 > 0) {
+						u8g2.setFont(u8g2_font_helvB08_tn);
+						u8g2.setCursor(2, 55 + u8g2.getAscent() / 2);
+						u8g2.print(F("0-100:"));
+
+						u8g2.setFont(u8g2_font_helvB10_tn);
+						dtostrf(A100 / 1000.0, 5, 2, CharVal);
+						L = u8g2.getUTF8Width(CharVal);
+						u8g2.drawUTF8(75 - L, 55 + u8g2.getAscent() / 2, CharVal);
+					}
+				}
+				// Скорость
+				draw_speed(81, 0, SPD);
+				// Давление
+				draw_map(81, 22);
+				// Температура
+				draw_water_temp(82, 44, 7);
+
+				// Линии разметки
+				u8g2.drawHLine(80, 21, 48);
+				u8g2.drawHLine(80, 43, 48);
+				u8g2.drawVLine(80, 0, 64);
+				
+				// Отсылаем данные на дисплей
+				u8g2.sendBuffer();
+			}
+			PrevSPD = SPD;
+		}
 	}
 }
 
@@ -842,7 +1046,7 @@ void setup() {
 	pinMode(BRIGHT_PIN, OUTPUT);
 
 	Serial.begin(115200);
-	
+
 	// Старт дисплея
 	u8g2.begin();
 	// Прозрачный режим шрифтов
@@ -858,22 +1062,38 @@ void setup() {
 void loop() {
 	button_update();
 	encoder_update();
-
 	receive_data();
 	build_data();
-	
+
 	//DataOk = 1;
 
-	// Обновлять дисплей только при наличии данных
-	if (millis() - LCDTimer >= 500) {
-		ButtonTimer = min(255, ButtonTimer + 1);
-		
-		BoxState += 1;
-		if (BoxState > 2) {BoxState = -1;}
-
-
+	// Длительное нажатие кнопки - сброс суточного пробега
+	if (ButtonState == 3) {
+		Distance = -1 * DIST;
+		FuelBurned = 0.0;
+		write_eeprom();
+		ButtonState = 2;
+	}
+	
+	// Короткое нажатие кнопки - вход в режим замера разгона
+	if (ButtonState == 1) {
+		LCDMode = 1;
+		ButtonState = 2;
 		if (DataOk) {
-			lcd_update();
+			lcd_acceleration();
+		}
+	}
+
+	// Обновлять дисплей только при наличии данных
+	if (DataOk) {
+		if (millis() - LCDTimer >= 500) {
+			LCDTimer = millis();
+
+			ButtonTimer = min(255, ButtonTimer + 1);
+			BoxState += 1;
+			if (BoxState > 2) {BoxState = -1;}
+			// Основной экран
+			lcd_main();
 		}
 	}
 }
