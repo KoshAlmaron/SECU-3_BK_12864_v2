@@ -16,6 +16,7 @@
 	2021-04-25 - Изменил размер пакета для версии 4.9 от 14.04.2021
 	2021-06-20 - Добавил сигнализацию превышения скорости (колокольчик AE86). 
 	2021-07-27 - Добавил экран ошибок CE.
+	2021-09-28 - Исправил размер пакета для версии 4.8. Вынес в настройки скорость порта.
 
 
 	0 - Прием данных от SECU
@@ -39,6 +40,7 @@
 	A3 - Speed Chime
 	A4 - 
 	A5 - 
+
 */
 
 #include <U8g2lib.h>
@@ -53,7 +55,7 @@
 //#define CE_BITS_COUNT 16
 
 // Прошивка v4.8
-//#define DATA_ARRAY_SIZE 68
+//#define DATA_ARRAY_SIZE 69
 //#define V49_DATA_SHIFT 0
 //#define CE_BITS_COUNT 16
 
@@ -67,6 +69,9 @@
 #define DATA_ARRAY_SIZE 81
 #define CE_BITS_COUNT 21
 
+// Скорость порта для процессора 1284 - 115200,
+// 							  для 644 - 57600
+#define SERIAL_PORT_SPEED 115200
 
 // Число импульсов датчика скорости на 1 км
 #define SPEED_SENSOR_COUNT 6000
@@ -1255,7 +1260,7 @@ void setup() {
 	pinMode(SPEED_CHIME_PIN, OUTPUT);
 	digitalWrite(SPEED_CHIME_PIN, LOW);
 
-	Serial.begin(115200);
+	Serial.begin(SERIAL_PORT_SPEED);
 
 	// Старт дисплея
 	u8g2.begin();
