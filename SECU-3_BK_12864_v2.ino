@@ -95,8 +95,10 @@
 					при быстром выключении и включении зажигания (перезапуск двигателя)
 	2021-12-14 - Добавил замер разгона 60-100.
 	2021-12-17 - Добавил большой блок лямбда коррекции.
+	2022-01-06 - Добавил коэффициент коррекции расхода топлива. 
 
 	ПЛАН:
+	 - Коректирующий коэффициент расхода топлива (35/32)
 	 - Аварийный уровень топлива,
 	 - Дисплей на MAX7219.
 */
@@ -124,10 +126,10 @@
 // Расход топлива храниться в мл, потому надо умножать литры на 1000.
 // Раскомментировать, прошить, закомментировать и прошить.
 //#define WRITE_EEPROM_ON_START
-#define WRITE_DISTANCE_DAY 14.8
-#define WRITE_DISTANCE_ALL 7411.0
-#define WRITE_FUEL_BURNED_DAY 1.3 * 1000.0
-#define WRITE_FUEL_BURNED_ALL 583.0 * 1000.0
+#define WRITE_DISTANCE_DAY 22.5
+#define WRITE_DISTANCE_ALL 7723.0
+#define WRITE_FUEL_BURNED_DAY 2.4 * 1000.0
+#define WRITE_FUEL_BURNED_ALL 670.0 * 1000.0
 
 //=============================================================================
 //=============================== СБРОС EEPROM  ===============================
@@ -403,15 +405,15 @@ void lcd_second() { // 0
 	
     draw_map_f(43, 0);    // ДАД (F)	
 	
-    draw_trottle_f(43, 22);    // ДПДЗ / РХХ (F)	
+    draw_airtemp_h(43, 22);    // Температура воздуха на впуске (H)	
 	
-    draw_water_temp_f(43, 44);    // Температура ОЖ (F)	
+    draw_angle_h(43, 44);    // Текущий УОЗ (H)	
 	
     draw_O2_sensor_f(86, 0);    // Напряжение УДК / AFR (F)	
 	
     draw_inj_duty_f(86, 22);    // Загрузка форсунок (F)	
 	
-    draw_lambda_corr_f(86, 44);
+    draw_lambda_corr_f(86, 44);    // Лямбда коррекция (F)	
 
 	// ========================== Блоки данных ==========================
 
@@ -1742,7 +1744,7 @@ void build_data() { // 12
 
 			// Усредненый мгновенный расход в мл/ч
 			float FFAVG = (float) (PrevFF_FRQ + FF_FRQ) * 112.5; // (3600 / 16) / 2
-			FuelBurnedRide += (float) (FFAVG * (millis() - FuelTimer)) / 3600000.0;
+			FuelBurnedRide += (float) ((FFAVG * (millis() - FuelTimer)) / 3600000.0) * FUEL_CONSUMPTION_RATIO;
 
 			PrevFF_FRQ = FF_FRQ;
 			FuelTimer = millis();
