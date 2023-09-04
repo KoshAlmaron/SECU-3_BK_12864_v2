@@ -5,25 +5,25 @@
 	2020-12-07
 	2020-12-09 - Изменил размер пакета для версии 4.9
 	2020-12-11 - При ХХ отображается только РХХ, 
-						ДПДЗ отображается при положении газа более 2%.
-					- Поменял шрифты температуры ОЖ и РХХ.
-					- Добавил пороги для значений и их индикацию.
+					ДПДЗ отображается при положении газа более 2%.
+				- Поменял шрифты температуры ОЖ и РХХ.
+				- Добавил пороги для значений и их индикацию.
 	2021-01-05 - Добавил возможность отображения AFR вместо напряжения.
-					- Добавил пороги для напряжения.
-					- Добавил возможность выбора числа импульсов датчика 
-						скорости на 1 км.
+				- Добавил пороги для напряжения.
+				- Добавил возможность выбора числа импульсов датчика 
+					скорости на 1 км.
 	2021-02-19 - Добавил экран замера разгона 0-100.
 	2021-04-25 - Изменил размер пакета для версии 4.9 от 14.04.2021
 	2021-06-20 - Добавил сигнализацию превышения скорости (колокольчик AE86). 
 	2021-07-27 - Добавил экран ошибок CE.
 	2021-09-28 - Исправил размер пакета для версии 4.8. Вынес в настройки скорость порта.
 	2021-10-03 - Добавил автоматическое переключение вывода АФР или напряжение УДК.
-					- Добавил возможность вывода оборотов на семисегментный дисплей на TM1637.
-					- Увеличил частоту обновления экрана.
-					- Добавил в настройки скорость обновления экрана.
+				- Добавил возможность вывода оборотов на семисегментный дисплей на TM1637.
+				- Увеличил частоту обновления экрана.
+				- Добавил в настройки скорость обновления экрана.
 	2021-10-04 - Исправил баг с переполнением буфера незадействованных параметров,
 						которые имели значение "7FFF".
-					- Добавил ограничения значений для всех параметров.
+				- Добавил ограничения значений для всех параметров.
 	2021-10-05 - Исправил еще один баг с переполнением буфера теперь уже для параметров, 
 					которые хранятся в EEPROM. Во-первых, неверно указал длину строки для пробега
 					и израсходованного топлива, во-вторых забыл, что на новой Ардуино в EEPROM
@@ -32,11 +32,32 @@
 		Переход на версию 2
 	==================================================================================================
 	2021-10-06 - Разбил все показания на экране на отдельные блоки. Сделал конфигуратор экрана в Excel.
-	2021-10-07 - Добавил блоки для отображения: 
-					- обороты (F),
-					- уровень топлива (F), 
-					- EGT (F),
-					- Давление масла (F).
+	2021-10-07 - Отсортировал и поделил на группы переменные и функции.
+			   	- Добавил второй экран.
+			   	- Добавил блоки для отображения: 
+					* обороты (F),
+					* уровень топлива (F), 
+					* EGT (F),
+					* Давление масла (F).
+	2021-10-08 - Вынес в отдельные файлы:
+					* Название ошибок CE в CE_Errors.h,
+					* Настроки в Configuration.h,
+					* Глобальные переменные в Global_Variables.h,
+					* Пиктограммы в Pictograms.h.
+				- Наделал кучу новых багов и героически с ними сражался,
+			   	- Сделал автоопределение размера пакета от SECU,
+			   	- Добавил второй экран с данными.
+			   	- Добавил блоки для отображения:
+			   		* Давление масла (F),
+			   		* ДАД2, давление газа (F),
+			   		* Дифф.давление, ДАД2-ДАД (F),
+			   		* Темп. 2, температура газа (F),
+			   		* Загрузка форсунок (F).
+
+
+	
+==================================================================================================
+	Назначения выводов Arduino
 
 	0 - Прием данных от SECU
 	1 - 
@@ -59,633 +80,62 @@
 	A3 - 
 	A4 - 
 	A5 - 
-
 */
 
+// Подключение бибилиотек
 #include <U8g2lib.h>
 #include <EEPROM.h>
 #include <avr/pgmspace.h>
 #include <TM1637Display.h>
 
-// Перед первой прошивкой необходимо стереть EEPROM,
-// так как там может храниться всякая ересь.
-// Для этого можно предварительно залить пример для работы с EEPROM
-// "eeprom_clear" из Arduino IDE, после чего залить уже код БК.
+// Подключение дополнительных файлов.
+#include "CE_Errors.h"
+#include "Configuration.h"
+#include "Global_Variables.h"
+#include "Pictograms.h"
 
-// Или раскомментировать строку ниже, прошиться, 
-//	закомментировать обратно и прошить заново.
+
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// !!!!!!!!!!!!!!!!!!! ВСЕ НАСТРОЙКИ В ФАЙЛЕ Configuration.h !!!!!!!!!!!!!!!!!!
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+//=============================================================================
+//================================== Отладка ==================================
+//=============================================================================
+// Режим отладки. Проверка работы экранов без подключения к SECU.
+// Раскомментировать для включения.
+//#define DEBUG_MODE
+
+
+//=============================================================================
+//=============================== СБРОС EEPROM  ===============================
+//=============================================================================
+/* 
+
+Перед первой прошивкой необходимо стереть EEPROM,
+так как там может храниться всякая ересь.
+Для этого можно предварительно залить пример для работы с EEPROM
+"eeprom_clear" из Arduino IDE, после чего залить уже код БК.
+
+    Или раскомментировать строку ниже, прошиться, 
+закомментировать обратно и прошить заново.
+
+*/
+
 //#define EEPROM_CLEAR_ON_START
 
-
-// Раскомментировать один блок для нужной версии прошивки
-
-// Прошивка v4.7
-//#define DATA_ARRAY_SIZE 66
-//#define V49_DATA_SHIFT 0
-//#define CE_BITS_COUNT 16
-
-// Прошивка v4.8
-//#define DATA_ARRAY_SIZE 69
-//#define V49_DATA_SHIFT 0
-//#define CE_BITS_COUNT 16
-
-// Прошивка v4.9 до 14.04.2021
-//#define V49_DATA_SHIFT 2
-//#define DATA_ARRAY_SIZE 75
-//#define CE_BITS_COUNT 16
-
-// Прошивка v4.9 с 14.04.2021
-#define V49_DATA_SHIFT 2
-#define DATA_ARRAY_SIZE 81
-#define CE_BITS_COUNT 21
-
-// Скорость порта для процессора 1284 - 115200,
-// 							  для 644 - 57600
-#define SERIAL_PORT_SPEED 115200
-
-// Число импульсов датчика скорости на 1 км
-#define SPEED_SENSOR_COUNT 6000
-// Коэффициент для вычисления скорости и дистанции
-#define M_PERIOD_DISTANCE 1000.0 / SPEED_SENSOR_COUNT
-
-// Пороги значений для температуры ОЖ
-#define WATER_TEMP_MIN -30.0
-#define WATER_TEMP_MAX 96.0
-
-// Пороги значений для температуры воздуха
-#define AIR_TEMP_MIN -20.0
-#define AIR_TEMP_MAX 50.0
-
-// Порог значений для УДК
-#define UDK_VOLT_MIN 0.01
-#define UDK_VOLT_MAX 0.87
-
-// Порог значений для ШДК
-#define LAMBDA_AFR_MIN 13.0
-#define LAMBDA_AFR_MAX 15.0
-
-// Порог значений наддува
-#define OVERBOOST_LIMIT 150.0
-
-// Пороги значений для лямбда коррекции
-#define LAMBDA_CORR_MIN -15.0
-#define LAMBDA_CORR_MAX 15.0
-
-// Пороги напряжения сети
-#define BATT_VOLT_MIN 12.0
-#define BATT_VOLT_MAX 14.5
-
-// Порог значений оборотов
-#define RPM_LIMIT 5500
-
-// Резерв топлива
-#define FUEL_TANK_MIN 10
-
-// Порог значений температуры выхлопных газов
-#define EGT_LIMIT 850
-
-// Порог значений давления масла
-#define OIL_PRESSURE_MIN 1.0
-#define OIL_PRESSURE_MAX 5.0
-
-// Скорость обновления экрана (пауза между обновлениями в мс)
-#define LCD_UPDATE_DELAY 400
-
-// Раскомментировать для отображения оборотов на дополнительном экране TM1637.
-//#define SHOW_RPM_TM1637
-// Яркость свечения экрана, 0 - минимальная, 7 - макимальная.  
-#define TM1637_BRIGHTNESS 4
-// Пины для TM1637
-#define TM1637_DIO 8
-#define TM1637_CLK 9
-
-// Таймеры для дисплея
-unsigned long LCDTimer = 0;
-// Таймер для бокса инверсии 
-char BoxState = 0;
-
-//  Массив байтов от SECU и флаг успешного получения данных
-byte DataOk = 0;
-byte Data[81 + 2];
-
-// В глобальных переменных только дистанция для использования в прерывании
-float DIST = 0.0;       // (29-31)  Дистанция
-
-// Переменные расчета и для хранения пробега и израсходованного топлива
-unsigned long FuelTimer = 0;
-float PrevFF_FRQ = 0.0;
-// Суточные
-float Distance = 0.0;
-float FuelBurned = 0.0;
-// Всего
-float DistanceAll = 0.0;
-float FuelBurnedAll = 0.0;
-
-// Энкодер
-#define ENCODER_PIN_A 5
-#define ENCODER_PIN_B 7
-#define ENCODER_PIN_C 6
-char EncoderState = 0;
-// Состояние кнопки (0 - не нажата, 1 - нажата, 2 - обработана)
-byte ButtonState = 0;
-// Таймер для кнопки.
-byte ButtonTimer = 0;
-// Номер активного экрана
-byte LCDMode = 0;
-
-// Яркость подсветки
-byte Bright;
-#define POWER_PIN 2
-#define BRIGHT_PIN 3
-#define MIN_BRIGHT 121
-#define STD_BRIGHT 180
-
-// Колокольчик AE86
-#define SPEED_CHIME_PIN 4
-// Лимит скорости
-#define SPEED_CHIME_LIMIT 100
-// Интервал включения и время удержания
-#define SPEED_CHIME_INTERVAL 1000
-#define SPEED_CHIME_DELAY 380
-//Состояние колокольчика
-byte SpeedChimeStatus = 0;
-// Таймер для колокольчика
-unsigned long SpeedChimeTimer = 0;
-
-// Наличие ошибок CE
-byte StatusCE = 0;
-// Количество ошибок
-byte CountCE[CE_BITS_COUNT];
-// Предыдущее состояние
-uint32_t PrevCE;
-
 // Настройка LCD дисплея
-U8G2_ST7920_128X64_F_HW_SPI u8g2(U8G2_R0, 10);
+U8G2_ST7920_128X64_F_HW_SPI u8g2(U8G2_R0, SPI_RS_PIN);
 
-// Спекцсимволы в пакете данных
-#define FOBEGIN  0x40       // '@'  Начало исходящего пакета
-#define FIOEND   0x0D       // '\r' Конец пакета
-#define FESC     0x0A       // '\n' Символ подмены байта (FESC)
-// Измененные байты, которые были в пакете и совпадали со сцец байтами
-#define TFOBEGIN 0x82       // Измененный FOBEGIN
-#define TFIOEND  0x83       // Измененный FIOEND
-#define TFESC    0x84       // Измененный FESC
-
-void write_eeprom() {
-	analogWrite(BRIGHT_PIN, 0);
-	float Dst = Distance + DIST;
-	float DstAll = DistanceAll + DIST;
-
-	// Dst = 210;
-	// DstAll = 2100;
-	// FuelBurned = 15.6;
-	// FuelBurnedAll = 164.1;
-
-	for (byte i = 0; i < 4; i++ ) {
-		byte *pValue = (byte*)&Dst;
-		EEPROM.write(i, *(pValue + i)); 
-	}
-	for (byte i = 0; i < 4; i++ ) {
-		byte *pValue = (byte*)&DstAll;
-		EEPROM.write(i + 4, *(pValue + i)); 
-	}
-	for (byte i = 0; i < 4; i++ ) {
-		byte *pValue = (byte*)&FuelBurned;
-		EEPROM.write(i + 8, *(pValue + i)); 
-	}
-	for (byte i = 0; i < 4; i++ ) {
-		byte *pValue = (byte*)&FuelBurnedAll;
-		EEPROM.write(i + 12, *(pValue + i)); 
-	}
-	EEPROM.write(20, Bright); 
-
-	analogWrite(BRIGHT_PIN, Bright);
-	//Serial.println("EEPROM");
-}
-
-byte read_buff(byte b1) {
-	if (b1 == FESC) {
-		byte b2 = Serial.read();
-		if (b2 == TFOBEGIN)
-			return FOBEGIN;
-		else if (b2 == TFIOEND)
-			return FIOEND;
-		else if (b2 == TFESC)
-			return FESC;
-		return 0;
-	}
-	else {
-		return b1;
-	}
-}
-
-void receive_data() {
-	byte IncomingByte = 0;
-	unsigned long Timer = millis();
-	byte Receive = 0;
-	byte N = 0;
-	DataOk = 0;
-
-	// Ждем символ начала пакета.
-	while (millis() - Timer < 500) {
-		if (Serial.available() > 0) {
-			IncomingByte = Serial.read();
-			if (IncomingByte == FOBEGIN) {
-				Receive = 1;
-				break;
-			}
-		}
-		else {
-			button_update();
-			encoder_update();
-		}
-	}
-	if (Receive) {
-		Timer = millis();
-		while (millis() - Timer < 500) {
-			if (Serial.available() > 1) {
-				IncomingByte = Serial.read();
-				if (IncomingByte == FIOEND) {
-					if (N == DATA_ARRAY_SIZE) {
-						DataOk = 1;
-					}
-					break;
-				}
-				else {
-					Data[N] = read_buff(IncomingByte);
-					N = N + 1;
-					if (N > DATA_ARRAY_SIZE) {
-						break;
-					}
-				}
-			}
-			else {
-				button_update();
-				encoder_update();
-			}
-		}
-	}
-}
-
-int build_int(byte i) {
-	int Value = 0;
-	byte *pValue = (byte*)&Value;
-	*pValue = Data[i + 1];  
-	*(pValue + 1) = Data[i];
-	return Value;
-}
-
-// Расчет скорости ТС
-float build_speed(byte i) {
-	unsigned int Value = 0;
-	byte* pValue = (byte*)&Value;
-	*pValue = Data[i + 1];  
-	*(pValue + 1) = Data[i];
-	if (Value != 0 && Value != 65535) {
-		float Period = (float) Value / 312500.0;
-		float Speed = (float)  ((M_PERIOD_DISTANCE / Period) * 3600.0) * 0.001;
-		Speed = constrain(Speed, 0, 333);
-		return Speed;
-	}
-	else {
-		return 0.0;
-	}
-}
-
-// Расчет пройденного пути
-float build_distance(byte i) {
-	unsigned long Value = 0;
-	byte* pValue = (byte*)&Value;
-	*pValue = Data[i + 2]; 
-	*(pValue + 1) = Data[i + 1];
-	*(pValue + 2) = Data[i];
-
-	float Dist = (float) (M_PERIOD_DISTANCE * Value) * 0.001;
-	return Dist;
-}
-
-// Сборка данных из байтов от SECU
-void build_data() {
-	if (DataOk) {
-		if (millis() - FuelTimer >= 500) {
-			DIST = build_distance(29 + V49_DATA_SHIFT);
-
-			// Расчет израсходованного топлива за интервал
-			float FF_FRQ = (float) build_int(32 + V49_DATA_SHIFT) * 0.00390625;  // 256
-			FF_FRQ = constrain(FF_FRQ, 0, 256);
-			if (FuelTimer > 0) {
-				float FFAVG = (float) (PrevFF_FRQ + FF_FRQ) * 0.1125; // Расход л/ч (3600 / 16000) / 2
-				FuelBurned += (float) FFAVG * (millis() - FuelTimer) / 3600000;
-				FuelBurnedAll += (float) FFAVG * (millis() - FuelTimer) / 3600000;
-			}
-			FuelTimer = millis();
-			PrevFF_FRQ = FF_FRQ;
-		}
-	}
-}
-
-void button_update() {
-	// ButtonState 0 - выкл, 1 - короткое включение, 2 - исполнено,
-	//             3 - длинное включение, 5 - первый контакт.
-	if (!digitalRead(ENCODER_PIN_C)) {
-		if (ButtonState == 0) {
-			ButtonState = 5;
-			ButtonTimer = 0;
-		}
-	}
-	else {
-		if (ButtonState == 2) {
-			if (ButtonTimer >= 1) {
-				ButtonState = 0;
-			}
-		}
-		else if (ButtonState == 5) {
-			if (ButtonTimer >= 4) {
-				ButtonState = 3;
-			}
-			else {
-				ButtonState = 1;
-			}
-			ButtonTimer = 0;
-		}
-	}
-}
-
-void encoder_update() {
-	boolean PinState[2];
-	PinState[0] = digitalRead(ENCODER_PIN_A);
-	PinState[1] = digitalRead(ENCODER_PIN_B);
-
-	// Начальная позиция 11.
-	if (PinState[0] && PinState[1]) {
-		// Если переход на начальную позицию после шага 3,
-		// то выполняем комманду.
-		if (abs(EncoderState) == 3) {
-			EncoderState = EncoderState + EncoderState/abs(EncoderState);
-		}
-	}
-	// Первый шаг.
-	if (EncoderState == 0) {
-		// 10 +.
-		if (PinState[0] && !PinState[1]) {EncoderState += 1;}
-		// 01 -.
-		if (!PinState[0] && PinState[1]) {EncoderState -= 1;}
-	}
-	// Второй шаг.
-	if (abs(EncoderState) == 1) {
-		// 00 *2.
-		if (!PinState[0] && !PinState[1]) {EncoderState = EncoderState * 2;}  
-	}
-	// Третий шаг.
-	if (EncoderState == 2) {
-		// 01 +.
-		if (!PinState[0] && PinState[1]) {EncoderState += 1;}  
-	}
-	if (EncoderState == -2) {
-		// 10 -.
-		if (PinState[0] && !PinState[1]) {EncoderState -= 1;}  
-	}
-}
-
-void speed_chime() {
-	float SPD = 0.0;
-	SPD = build_speed(27 + V49_DATA_SHIFT);
-
-	//SPD = 101;
-
-	if (SpeedChimeStatus == 1) {
-		if (millis() - SpeedChimeTimer >= SPEED_CHIME_DELAY) {
-			digitalWrite(SPEED_CHIME_PIN, LOW);
-			SpeedChimeTimer = millis();
-			SpeedChimeStatus = 2;
-		}
-	}
-	else if (SpeedChimeStatus == 2) {
-		if (millis() - SpeedChimeTimer >= SPEED_CHIME_INTERVAL) {
-			SpeedChimeStatus = 0;
-		}
-	}
-
-	if (SpeedChimeStatus == 0) {
-		if (SPD > SPEED_CHIME_LIMIT) {
-			digitalWrite(SPEED_CHIME_PIN, HIGH);
-			SpeedChimeTimer = millis();
-			SpeedChimeStatus = 1;
-		}
-	}
-}
-
-// Массивы с пиктограммами
-#define Trollface_width 81
-#define Trollface_height 64
-const unsigned char Trollface_bits[] PROGMEM = {
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0xf8, 0xff, 0x03, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0xff, 0xff, 0xff, 0xff, 0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0,
-  0xff, 0x01, 0x00, 0x00, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x00, 0xfe, 0x03,
-  0x1c, 0x00, 0x02, 0x80, 0x01, 0x00, 0x00, 0x00, 0xc0, 0x03, 0x00, 0x00,
-  0x00, 0x10, 0x00, 0x03, 0x00, 0x00, 0x00, 0xf0, 0x10, 0x00, 0x00, 0xe0,
-  0x40, 0x00, 0x06, 0x00, 0x00, 0x00, 0x38, 0x00, 0xc0, 0x00, 0x00, 0x8c,
-  0x00, 0x0e, 0x00, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x30, 0x02,
-  0x0c, 0x00, 0x00, 0x00, 0x06, 0xc0, 0x0f, 0x00, 0x00, 0xcc, 0x00, 0x1c,
-  0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x20, 0x01, 0x18, 0x00,
-  0x00, 0x00, 0x03, 0x02, 0x00, 0x80, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00,
-  0x00, 0x03, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00,
-  0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x80, 0x01,
-  0x00, 0x00, 0x00, 0xf8, 0x1f, 0x00, 0x60, 0x00, 0x00, 0x80, 0x01, 0x60,
-  0x00, 0x00, 0xde, 0x7f, 0x00, 0xe0, 0x00, 0x00, 0xc0, 0x00, 0xfc, 0x07,
-  0x80, 0xc3, 0xff, 0x00, 0xc0, 0x01, 0x00, 0xe0, 0x00, 0xde, 0x1f, 0xc0,
-  0xc1, 0xbf, 0x01, 0xc0, 0x03, 0x00, 0x70, 0x06, 0xfe, 0xbf, 0xc0, 0xf8,
-  0xff, 0x11, 0x00, 0x07, 0x00, 0xb8, 0x00, 0x00, 0xff, 0xc0, 0x1f, 0x00,
-  0x80, 0x03, 0x0c, 0x00, 0x5c, 0x00, 0x00, 0x70, 0x80, 0x07, 0x06, 0xf0,
-  0x1f, 0x18, 0x00, 0xac, 0x11, 0x00, 0x30, 0x00, 0x00, 0x0e, 0x7c, 0x30,
-  0x30, 0x00, 0x0c, 0xfc, 0x01, 0x30, 0x00, 0x00, 0xfc, 0x3f, 0x61, 0x20,
-  0x00, 0x0c, 0x86, 0x1b, 0x30, 0x00, 0x00, 0xe0, 0x07, 0xc1, 0x60, 0x00,
-  0x0c, 0x00, 0x1f, 0x38, 0x00, 0x00, 0x00, 0x80, 0x83, 0x60, 0x00, 0x0c,
-  0x20, 0x00, 0x1c, 0x00, 0x03, 0x00, 0xe0, 0x87, 0x60, 0x00, 0x0c, 0x20,
-  0x00, 0x07, 0x80, 0x0f, 0x00, 0x7c, 0x8f, 0x60, 0x00, 0x08, 0x31, 0x80,
-  0x03, 0x00, 0x0c, 0x00, 0x1f, 0x9f, 0x60, 0x00, 0x18, 0x70, 0xc0, 0x07,
-  0xf8, 0x0c, 0xe0, 0x07, 0xc3, 0x60, 0x00, 0xb0, 0x78, 0x90, 0x06, 0xf8,
-  0x0c, 0xf8, 0x81, 0x43, 0x30, 0x00, 0x30, 0xf8, 0x00, 0x0c, 0x00, 0x06,
-  0xff, 0xc1, 0x03, 0x32, 0x00, 0x60, 0xf8, 0x01, 0xf8, 0x00, 0xe0, 0x83,
-  0xe1, 0x01, 0x18, 0x00, 0x60, 0xf8, 0x0f, 0x60, 0x00, 0x7c, 0x80, 0xff,
-  0x00, 0x0c, 0x00, 0x40, 0xb8, 0x7f, 0x00, 0xe0, 0x3f, 0xc0, 0x7f, 0x00,
-  0x06, 0x00, 0xc0, 0xb8, 0xf1, 0xff, 0xff, 0x30, 0xf0, 0x63, 0x00, 0x03,
-  0x00, 0xc0, 0xb8, 0x31, 0xff, 0x0d, 0x30, 0xfe, 0x31, 0x80, 0x01, 0x00,
-  0xc0, 0xbc, 0x19, 0x18, 0x0c, 0xf0, 0xff, 0x19, 0xc0, 0x00, 0x00, 0xc0,
-  0xf8, 0x19, 0x18, 0x0c, 0xf8, 0x8f, 0x1d, 0xc0, 0x00, 0x00, 0xc0, 0xf8,
-  0xff, 0xff, 0xff, 0xff, 0x81, 0x0f, 0x60, 0x00, 0x00, 0xc0, 0xf8, 0xff,
-  0xff, 0xff, 0x7f, 0x00, 0x07, 0x60, 0x00, 0x00, 0xc0, 0xf8, 0xff, 0xff,
-  0xff, 0x67, 0x80, 0x03, 0x20, 0x00, 0x00, 0xc0, 0xf8, 0xff, 0xff, 0xff,
-  0x60, 0xc0, 0x01, 0x30, 0x00, 0x00, 0xc0, 0xf8, 0xff, 0xff, 0x1f, 0xc0,
-  0xe0, 0x00, 0x30, 0x00, 0x00, 0xc0, 0xf0, 0xee, 0x3c, 0x10, 0xc0, 0x78,
-  0x00, 0x18, 0x00, 0x00, 0xc0, 0xf0, 0xcd, 0x30, 0x30, 0x80, 0x1f, 0x00,
-  0x0c, 0x00, 0x00, 0x40, 0xe0, 0xcc, 0x30, 0x30, 0x80, 0x0f, 0x00, 0x06,
-  0x00, 0x00, 0x40, 0xe0, 0x9f, 0x21, 0x30, 0xf0, 0x01, 0x80, 0x03, 0x00,
-  0x00, 0x60, 0xc0, 0xff, 0x21, 0xf0, 0x7f, 0x00, 0xc6, 0x01, 0x00, 0x00,
-  0x60, 0x00, 0xfe, 0xff, 0xff, 0x07, 0x84, 0x71, 0x00, 0x00, 0x00, 0x60,
-  0x00, 0xc0, 0xff, 0x1f, 0x00, 0x61, 0x3c, 0x00, 0x00, 0x00, 0x60, 0x00,
-  0x00, 0x00, 0x00, 0x40, 0x0c, 0x0f, 0x00, 0x00, 0x00, 0x60, 0x80, 0x00,
-  0x00, 0x00, 0x18, 0xc3, 0x03, 0x00, 0x00, 0x00, 0x60, 0x00, 0x03, 0x00,
-  0x00, 0x03, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x60, 0x08, 0x18, 0x00, 0x00,
-  0x00, 0x3c, 0x00, 0x00, 0x00, 0x00, 0x60, 0x30, 0x00, 0x00, 0x00, 0x00,
-  0x0f, 0x00, 0x00, 0x00, 0x00, 0x60, 0xc0, 0x03, 0x00, 0x00, 0xc0, 0x03,
-  0x00, 0x00, 0x00, 0x00, 0x60, 0x00, 0x20, 0x00, 0x00, 0xf0, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0xc0, 0x00, 0x00, 0x00, 0xf0, 0x0f, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x80, 0x03, 0x00, 0x00, 0xfe, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x0f, 0x00, 0xe0, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0xfc, 0xc1, 0xff, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0,
-  0xff, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-
-#define Cels_width 3
-#define Cels_height 3
-const unsigned char Cels_bits[] PROGMEM = {0x02, 0x05, 0x02};
-
-#define Cels2_width 4
-#define Cels2_height 4
-const unsigned char Cels2_bits[] PROGMEM = {0x06, 0x09, 0x09, 0x06};
-
-#define Temp_width 8
-#define Temp_height 15
-const unsigned char Temp_bits[] PROGMEM = {
-  0x1c, 0xf4, 0x14, 0x14, 0xf4, 0x14, 0x14, 0xf4, 0x14, 0x36, 0x63, 0x41,
-  0x41, 0x63, 0x3e };
-
-#define Road_width 7
-#define Road_height 16
-const unsigned char Road_bits[] PROGMEM = {
-	0x41, 0x49, 0x49, 0x49, 0x41, 0x49, 0x49, 0x49, 0x41, 0x49, 0x49, 0x49,
-	0x41, 0x49, 0x49, 0x49 };
-
-#define Map_width 9
-#define Map_height 8
-const unsigned char Map_bits[] PROGMEM = {
-	0x38, 0x00, 0x54, 0x00, 0x92, 0x00, 0x82, 0x00, 0x44, 0x00, 0x38, 0x00,
-	0x10, 0x00, 0xff, 0x01 };
-
-#define AirTemp_width 6
-#define AirTemp_height 8
-const unsigned char AirTemp_bits[] PROGMEM = {
-	0x24, 0x0e, 0x2a, 0x0a, 0x2a, 0x11, 0x11, 0x0e };
-
-#define Angle_width 10
-#define Angle_height 8
-const unsigned char Angle_bits[] PROGMEM = {
-	0x40, 0x00, 0x20, 0x00, 0x10, 0x00, 0x28, 0x00, 0x44, 0x00, 0x82, 0x00,
-	0x81, 0x00, 0xff, 0x03 };
-
-#define Trottle_width 8
-#define Trottle_height 12
-const unsigned char Trottle_bits[] PROGMEM = {
-	0x81, 0x81, 0x81, 0xc1, 0xa1, 0x99, 0x99, 0x85, 0x83, 0x81, 0x81, 0x81 };
-
-#define IAC_width 8
-#define IAC_height 12
-const unsigned char IAC_bits[] PROGMEM = {
-	0x18, 0x18, 0x3c, 0xff, 0x6a, 0x56, 0x6a, 0x56, 0x6a, 0x56, 0x6a, 0x7e };
-
-#define AFC_width 10
-#define AFC_height 15
-const unsigned char AFC_bits[] PROGMEM = {
-	0x10, 0x00, 0x30, 0x00, 0x78, 0x00, 0xfc, 0x00, 0xfc, 0x00, 0xfe, 0x01,
-	0xfe, 0x01, 0xff, 0x03, 0xff, 0x03, 0xf3, 0x03, 0xf3, 0x03, 0xf7, 0x03,
-	0xe6, 0x01, 0xfc, 0x00, 0x78, 0x00 };
-
-#define O2_width 11
-#define O2_height 8
-const unsigned char O2_bits[] PROGMEM = {
-	0x1c, 0x00, 0x36, 0x00, 0x63, 0x00, 0x41, 0x07, 0x41, 0x04, 0x63, 0x07,
-	0x36, 0x01, 0x1c, 0x07 };
-
-#define LambdaCorr_width 11
-#define LambdaCorr_height 8
-const unsigned char LambdaCorr_bits[] PROGMEM = {
-	0x8c, 0x01, 0xcc, 0x03, 0xec, 0x07, 0x8c, 0x01, 0x8c, 0x01, 0xbf, 0x01,
-	0x9e, 0x01, 0x8c, 0x01 };
-
-#define Batt_width 11
-#define Batt_height 8
-const unsigned char Batt_bits[] PROGMEM = {
-	0x8c, 0x01, 0xff, 0x07, 0x01, 0x04, 0x09, 0x04, 0xdd, 0x05, 0x09, 0x04,
-	0x01, 0x04, 0xff, 0x07 };
-
-#define FuelTank_width 12
-#define FuelTank_height 15
-const unsigned char FuelTank_bits[] PROGMEM = {
-	0xfe, 0x00, 0x82, 0x06, 0x82, 0x0c, 0x82, 0x08, 0x82, 0x0b, 0x82, 0x0a,
-	0xfe, 0x0a, 0xfe, 0x0a, 0xfe, 0x0a, 0xfe, 0x0a, 0xfe, 0x0a, 0xfe, 0x0a,
-	0xfe, 0x0e, 0xfe, 0x00, 0xff, 0x01 };
-
-#define FuelCanister_width 10
-#define FuelCanister_height 15
-const unsigned char FuelCanister_bits[] PROGMEM = {
-   0xf2, 0x01, 0x09, 0x02, 0xe4, 0x02, 0x02, 0x02, 0x01, 0x02, 0x01, 0x02,
-   0x85, 0x02, 0x49, 0x02, 0x31, 0x02, 0x31, 0x02, 0x49, 0x02, 0x85, 0x02,
-   0x01, 0x02, 0x01, 0x02, 0xfe, 0x01 };
-
-#define OilPressure_width 11
-#define OilPressure_height 17
-const unsigned char OilPressure_bits[] PROGMEM = {
-   0x91, 0x03, 0x49, 0x04, 0x45, 0x00, 0x43, 0x06, 0x45, 0x04, 0x49, 0x04,
-   0x91, 0x03, 0x00, 0x00, 0xff, 0x07, 0x00, 0x00, 0x4e, 0x04, 0xd1, 0x06,
-   0x41, 0x05, 0x41, 0x04, 0x41, 0x04, 0x51, 0x04, 0x4e, 0x04 };
-
-
-#define SPD_width 11
-#define SPD_height 17
-const unsigned char SPD_bits[] PROGMEM = {
-	0x0e, 0x00, 0x11, 0x00, 0x01, 0x00, 0x0e, 0x00, 0x10, 0x00, 0xd1, 0x03,
-	0x4e, 0x04, 0x40, 0x04, 0xc0, 0x03, 0x40, 0x00, 0x4f, 0x00, 0x51, 0x00,
-	0x11, 0x00, 0x11, 0x00, 0x11, 0x00, 0x11, 0x00, 0x0f, 0x00 };
-
-#define MAP2_width 11
-#define MAP2_height 17
-const unsigned char MAP2_bits[] PROGMEM = {
-	0xf8, 0x00, 0x04, 0x01, 0x82, 0x02, 0xc1, 0x04, 0x61, 0x04, 0x71, 0x04,
-	0x21, 0x04, 0x01, 0x04, 0x02, 0x02, 0x04, 0x01, 0xf8, 0x00, 0x50, 0x00,
-	0x50, 0x00, 0x50, 0x00, 0xdf, 0x07, 0x00, 0x00, 0xff, 0x07 };
-
-#define Next_width 11
-#define Next_height 7
-const unsigned char Next_bits[] PROGMEM = {
-   0x01, 0x04, 0x03, 0x06, 0x06, 0x03, 0x8c, 0x01, 0xd8, 0x00, 0x70, 0x00,
-   0x20, 0x00 };
-
-// Ошибки CE
-const char CEItem_0[] PROGMEM =  "CKPS MALFUNCTION";
-const char CEItem_1[] PROGMEM =  "EEPROM BROKEN   ";
-const char CEItem_2[] PROGMEM =  "PROGRAM BROKEN  ";
-const char CEItem_3[] PROGMEM =  "KSP CHIP FAILED ";
-const char CEItem_4[] PROGMEM =  "KNOCK DETECTED  ";
-const char CEItem_5[] PROGMEM =  "MAP SENSOR FAIL ";
-const char CEItem_6[] PROGMEM =  "TEMP SENSOR FAIL";
-const char CEItem_7[] PROGMEM =  "VOLT SENSOR FAIL";
-const char CEItem_8[] PROGMEM =  "DWELL CONTROL   ";
-const char CEItem_9[] PROGMEM =  "CAMS MALFUNCTION";
-const char CEItem_10[] PROGMEM = "TPS SENSOR FAIL ";
-const char CEItem_11[] PROGMEM = "ADD I1 SENSOR   ";
-const char CEItem_12[] PROGMEM = "ADD I2 SENSOR   ";
-const char CEItem_13[] PROGMEM = "ADD I3 SENSOR   ";
-const char CEItem_14[] PROGMEM = "ADD I4 SENSOR   ";
-const char CEItem_15[] PROGMEM = "SYS START       ";
-const char CEItem_16[] PROGMEM = "ADD I5 SENSOR   ";
-const char CEItem_17[] PROGMEM = "ADD I6 SENSOR   ";
-const char CEItem_18[] PROGMEM = "ADD I7 SENSOR   ";
-const char CEItem_19[] PROGMEM = "ADD I8 SENSOR   ";
-const char CEItem_20[] PROGMEM = "ECU ERROR COUNT ";
-
-const char* const CEItemsArray[] PROGMEM = {CEItem_0, CEItem_1
-  , CEItem_2, CEItem_3, CEItem_4, CEItem_5, CEItem_6, CEItem_7
-  , CEItem_8, CEItem_9, CEItem_10, CEItem_11, CEItem_12
-  , CEItem_13, CEItem_14, CEItem_15, CEItem_16, CEItem_17, CEItem_18, CEItem_19, CEItem_20};
+//=============================================================================
+//=================== Функциия отрисовки блоков данных ========================
+//=============================================================================
 
 void draw_ff_fc_f(byte x, byte y) {
-	float FF_FRQ = (float) build_int(32 + V49_DATA_SHIFT) * 0.00390625;  // 256
+	float FF_FRQ = (float) build_int(32 + DataShift) * 0.00390625;  // 256
 	FF_FRQ = constrain(FF_FRQ, 0, 256);
 	float TPS = (float) Data[18] * 0.5;                     // 2
-	float SPD = build_speed(27 + V49_DATA_SHIFT);
+	float SPD = build_speed(27 + DataShift);
 	float FF = 0.0;
 	float FC = 0.0;
 
@@ -743,6 +193,7 @@ void draw_ff_fc_f(byte x, byte y) {
 
 void draw_water_temp_f(byte x, byte y) {
 	float TEMP = (float) build_int(7) * 0.25;
+	//TEMP = DataSize;
 	TEMP = constrain(TEMP, -99, 333);
 	char CharVal[4];
 	byte H;
@@ -799,7 +250,7 @@ void draw_map_h(byte x, byte y) {
 		}
 	}
 
-	u8g2.drawXBMP(x + 2, y + 1, Map_width, Map_height, Map_bits);
+	u8g2.drawXBMP(x + 2, y + 1, MapS_width, MapS_height, MapS_bits);
 
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
@@ -809,8 +260,78 @@ void draw_map_h(byte x, byte y) {
 	u8g2.drawUTF8(41 - 5 - L + x, y + 9, CharVal);
 }
 
+void draw_map_f(byte x, byte y) {
+	float MAP = (float) build_int(3) * 0.015625;            // 64
+	MAP = constrain(MAP, 0, 333);
+	char CharVal[4];
+	byte H;
+	byte L;
+
+	if (BoxState > 0) {
+		if (MAP > OVERBOOST_LIMIT) {
+			u8g2.drawBox(x + 1, y + 1, 40, 19);
+		}
+	}
+
+	u8g2.drawXBMP(x + 2, y + 2, MapL_width, MapL_height, MapL_bits);
+	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(MAP, 3, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
+}
+
+void draw_map2_f(byte x, byte y) {
+	float MAP = (float) build_int(56 + DataShift) * 0.015625;            // 64
+	MAP = constrain(MAP, 0, 333);
+	char CharVal[4];
+	byte H;
+	byte L;
+
+	u8g2.drawXBMP(x + 2, y + 2, Map2L_width, Map2L_height, Map2L_bits);
+	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(MAP, 3, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
+}
+
+void draw_map_diff_f(byte x, byte y) {
+	float MAP = (float) build_int(56 + DataShift) * 0.015625 - (float) build_int(3) * 0.015625;    
+	MAP = constrain(MAP, -333, 333);
+	char CharVal[5];
+	byte H;
+	byte L;
+
+	u8g2.drawXBMP(x + 2, y + 2, MapLDiff_width, MapLDiff_height, MapLDiff_bits);
+	u8g2.setFont(u8g2_font_helvB10_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(MAP, 4, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 1 - L + x, y + 10 + H/2, CharVal);
+}
+
+void draw_temp2_f(byte x, byte y) {
+	float Temp2 = (float) build_int(58 + DataShift) * 0.25;            // 4
+	Temp2 = constrain(Temp2, -99, 333);
+	char CharVal[4];
+	byte H;
+	byte L;
+
+	u8g2.drawXBMP(x + 2, y + 2, Temp2_width, Temp2_height, Temp2_bits);
+	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(Temp2, 3, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
+}
+
 void draw_airtemp_h(byte x, byte y) {
-	float AIRTEMP = (float) build_int(34 + V49_DATA_SHIFT) * 0.25;           // 4
+	float AIRTEMP = (float) build_int(34 + DataShift) * 0.25;           // 4
 	AIRTEMP = constrain(AIRTEMP, -99, 333);
 	byte H;
 	byte L;
@@ -834,7 +355,7 @@ void draw_airtemp_h(byte x, byte y) {
 
 void draw_trottle_f(byte x, byte y) {
 	float TPS = (float) Data[18] * 0.5;                     // 2
-	float IAC = (float) Data[25 + V49_DATA_SHIFT] * 0.5;                     // 2
+	float IAC = (float) Data[25 + DataShift] * 0.5;                     // 2
 	char CharVal[6];
 	byte H;
 	byte L;
@@ -892,7 +413,7 @@ void draw_O2_sensor_h(byte x, byte y) {
 	byte H;
 	byte L;
 
-	float AFR = (float) build_int(60 + V49_DATA_SHIFT) * 0.0078125;      // 128
+	float AFR = (float) build_int(60 + DataShift) * 0.0078125;      // 128
 	AFR = constrain(AFR, 0, 33);
 	if (AFR > 0) {
 		// Если есть показания АФР, значит показывать надо АФР.
@@ -933,7 +454,7 @@ void draw_lambda_corr_h(byte x, byte y) {
 	byte H;
 	byte L;
 
-	float AFR_CORR = (float) build_int(50 + V49_DATA_SHIFT) * 0.1953125; // 5.12
+	float AFR_CORR = (float) build_int(50 + DataShift) * 0.1953125; // 5.12
 	AFR_CORR = constrain(AFR_CORR, -99.9, 99.9);
 	if (BoxState > 0) {
 		if (AFR_CORR < LAMBDA_CORR_MIN || AFR_CORR > LAMBDA_CORR_MAX) {
@@ -1022,30 +543,8 @@ void draw_fuel_burned_f(byte x, byte y) {
 	u8g2.drawUTF8(41 - 1 - L + x, y + H * 2 + 5, CharVal);
 }
 
-void draw_map_f(byte x, byte y) {
-	float MAP = (float) build_int(3) * 0.015625;            // 64
-	MAP = constrain(MAP, 0, 333);
-	char CharVal[4];
-	byte H;
-	byte L;
-
-	if (BoxState > 0) {
-		if (MAP > OVERBOOST_LIMIT) {
-			u8g2.drawBox(x + 1, y + 1, 40, 19);
-		}
-	}
-
-	u8g2.drawXBMP(x + 2, y + 2, MAP2_width, MAP2_height, MAP2_bits);
-	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
-	H = u8g2.getAscent();
-
-	dtostrf(MAP, 3, 0, CharVal);
-	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
-}
-
 void draw_speed_f(byte x, byte y) {
-	float SPD =  build_speed(27 + V49_DATA_SHIFT);
+	float SPD =  build_speed(27 + DataShift);
 	float DDANGLE = (float) build_int(13) * 0.03125;
 	DDANGLE = constrain(DDANGLE, 0, 99);
 	char CharVal[4];
@@ -1086,8 +585,29 @@ void draw_rpm_f(byte x, byte y) {
 	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
 }
 
+void draw_fuel_tank_f(byte x, byte y) {
+	float FTLS = (float) build_int(75) * 0.015625;            // 64
+	FTLS = constrain(FTLS, 0, 333);
+	byte H;
+	byte L;
+	char CharVal[4];
+	if (BoxState > 0) {
+		if (FTLS < FUEL_TANK_MIN) {
+			u8g2.drawBox(x + 1, y + 1, 40, 19);
+		}
+	}
+
+	u8g2.drawXBMP(x + 1, y + 3, FuelTank_width, FuelTank_height, FuelTank_bits);
+	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(FTLS, 3, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 3 - L + x, y + 10 + H/2, CharVal);
+}
+
 void draw_egt_f(byte x, byte y) {
-	float EGT = (float) build_int(75 + V49_DATA_SHIFT) * 0.25;            // 4
+	float EGT = (float) build_int(77) * 0.25;            // 4
 	EGT = constrain(EGT, 0, 1999);
 	EGT = trunc(EGT * 0.1) * 10;
 
@@ -1109,34 +629,11 @@ void draw_egt_f(byte x, byte y) {
 	u8g2.drawXBMP(41 - 5 + x, y + 5, Cels2_width, Cels2_height, Cels2_bits);
 }
 
-void draw_fuel_tank_f(byte x, byte y) {
-	float FTLS = (float) build_int(73 + V49_DATA_SHIFT) * 0.015625;            // 64
-	FTLS = constrain(FTLS, 0, 333);
-	byte H;
-	byte L;
-	char CharVal[4];
-	if (BoxState > 0) {
-		if (FTLS < FUEL_TANK_MIN) {
-			u8g2.drawBox(x + 1, y + 1, 40, 19);
-		}
-	}
-
-	u8g2.drawXBMP(x + 1, y + 3, FuelTank_width, FuelTank_height, FuelTank_bits);
-	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
-	H = u8g2.getAscent();
-
-	dtostrf(FTLS, 3, 0, CharVal);
-	L = u8g2.getUTF8Width(CharVal);
-	u8g2.drawUTF8(41 - 3 - L + x, y + 10 + H/2, CharVal);
-}
-
 void draw_oil_pressure_f(byte x, byte y) {
-	float OPS = (float) build_int(77 + V49_DATA_SHIFT) * 0.015625;            // 64
+	float OPS = (float) build_int(79) * 0.015625;            // 64
 	OPS = constrain(OPS, 0, 9.9);
-
 	byte H;
 	byte L;
-	OPS = 0.9;
 	char CharVal[4];
 	if (BoxState > 0) {
 		if (OPS < OIL_PRESSURE_MIN || OPS > OIL_PRESSURE_MAX ) {
@@ -1153,15 +650,36 @@ void draw_oil_pressure_f(byte x, byte y) {
 	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
 }
 
+void draw_inj_duty_f(byte x, byte y) {
+	float InjDuty = Data[81] * 0.5; // 2
+	InjDuty = constrain(InjDuty, 0, 100);
+	char CharVal[4];
+	byte H;
+	byte L;
+
+	u8g2.drawXBMP(x + 2, y + 3, InjDuty_width, InjDuty_height, InjDuty_bits);
+	u8g2.setFont(u8g2_font_pxplusibmvga8_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(InjDuty, 3, 0, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 10 + H/2, CharVal);
+}
+
+// Обороты на дополнительном сегментном дисплее
 void draw_rpm_tm1637() {
 	int RPM = build_int(1);
 	RPM = constrain(RPM, 0, 9999);
 	RPM = trunc(RPM * 0.1) * 10;
-	TM1637Display display(TM1637_CLK, TM1637_DIO);
+	TM1637Display display(TM1637_CLK_PIN, TM1637_DIO_PIN);
 	display.setBrightness(TM1637_BRIGHTNESS);
 	display.showNumberDec(RPM, false);
 }
 
+//=============================================================================
+//===================== Функциия отрисовки экранов ============================
+//=============================================================================
+// Экран приветствия
 void draw_init(byte x, byte y) {
 	analogWrite(BRIGHT_PIN, MIN_BRIGHT);
 	u8g2.clearBuffer();
@@ -1177,6 +695,7 @@ void draw_init(byte x, byte y) {
 	analogWrite(BRIGHT_PIN, Bright);
 }
 
+// Основной экран
 void lcd_main() {
 	// Очищаем память дисплея
 	u8g2.clearBuffer();
@@ -1219,6 +738,51 @@ void lcd_main() {
 	u8g2.sendBuffer();
 }
 
+// Второй экран
+void lcd_second() {
+	// Очищаем память дисплея
+	u8g2.clearBuffer();
+
+	// ========================== Блоки данных ==========================
+    draw_oil_pressure_f(0, 0);    // Давление масла (F)	
+	
+    draw_map_f(0, 22);    // ДАД (F)	
+	
+    draw_map2_f(0, 44);    // ДАД2, давление газа (F)	
+	
+    draw_map_diff_f(43, 0);    // Дифф.давление, ДАД2-ДАД (F)	
+	
+    draw_rpm_f(43, 22);    // Обороты (F)	
+	
+    draw_egt_f(43, 44);    // Температура выхлопных газов (F)	
+	
+    draw_fuel_tank_f(86, 0);    // Уровень топлива (F)	
+	
+    draw_inj_duty_f(86, 22);    // Загрузка форсунок (F)	
+	
+    draw_temp2_f(86, 44);    // Темп. 2, температура газа (F)	
+	
+
+	// ========================== Блоки данных ==========================
+
+
+	// Линии разметки
+	u8g2.drawHLine(0, 21, 128);
+	u8g2.drawHLine(0, 43, 128);
+	u8g2.drawVLine(42, 0, 64);
+	u8g2.drawVLine(85, 0, 64);
+
+	// Рамка при появлении ошибок CE
+	if (StatusCE > 0 && BoxState > 0) {
+		u8g2.drawFrame(0, 0, 128, 64);
+		StatusCE = 0;
+	}
+	
+	// Отсылаем данные на дисплей
+	u8g2.sendBuffer();
+}
+
+// Экран замера разгона
 void lcd_acceleration() {
 	float SPD = 0.0;
 	float PrevSPD = 0.0;
@@ -1236,7 +800,7 @@ void lcd_acceleration() {
 	//						4 - замер не удался.
 	byte Mode = 0;
 
-	while (LCDMode == 1) {
+	while (LCDMode == 2) {
 		loop_2();
 
 		// Сброс длительного нажатия кнопки
@@ -1244,14 +808,14 @@ void lcd_acceleration() {
 			ButtonState = 2;
 		}
 
-		// Выход из экрана замера разгона
+		// Переход на следующий экран
 		if (ButtonState == 1) {
-			LCDMode = 2;
+			LCDMode = 3;
 			ButtonState = 2;
 		}
 
 		if (DataOk) {
-			SPD = build_speed(27 + V49_DATA_SHIFT);
+			SPD = build_speed(27 + DataShift);
 			//if (Mode == 2) {SPD = min(SPD + 0.001, 120);}
 			// Запуск измерения при скрости 0 в течение 2 сек.
 			if (Mode == 0) {
@@ -1361,30 +925,11 @@ void lcd_acceleration() {
 	}
 }
 
-void check_ce_errors() {
-	// Собираем все байты CE в один кусок
-	uint32_t CE = 0;
-	byte *pValue = (byte*)&CE;
-	*pValue = Data[26];  
-	*(pValue + 1) = Data[25];
-	*(pValue + 2) = Data[24];
-	*(pValue + 3) = Data[23];
-
-	//StatusCE = 0;
-	for (byte i = 0; i < CE_BITS_COUNT; i++ ) {
-		// Проверяем изменение бита CE с 0 на 1
-		if (bitRead(CE, i) == 1 && bitRead(PrevCE, i) == 0) {
-			CountCE[i] = min(99, CountCE[i] + 1);
-		}
-		// Считаем количество ошибок CE в данный момент.
-		if (i != 15 && bitRead(CE, i) == 1) {
-			StatusCE = min(255, StatusCE + 1);
-		}
-	}
-	PrevCE = CE;
-}
-
+// Экран ошибок CE
 void lcd_ce_errors() {
+	byte BitsCount = 16;
+	if (DataSize >= 74) {BitsCount = 21;}
+
 	#define ROWS_ON_SCREEN 5
 	byte StartRow = 0;
 	byte Row = 0;
@@ -1395,12 +940,12 @@ void lcd_ce_errors() {
 	byte H;
 	byte L;
 
-	while (LCDMode == 2) {
+	while (LCDMode == 3) {
 		loop_2();
 
 		// Сброс ошибок при длительном нажатия кнопки
 		if (ButtonState == 3) {
-			for (byte i = 0; i < CE_BITS_COUNT; i++ ) {
+			for (byte i = 0; i < BitsCount; i++ ) {
 				CountCE[i] = 0;
 			}
 			ButtonState = 2;
@@ -1432,7 +977,7 @@ void lcd_ce_errors() {
 			H = u8g2.getAscent();
 
  			Row = 1;
-			for (byte i = StartRow; i < CE_BITS_COUNT; i++ ) {
+			for (byte i = StartRow; i < BitsCount; i++ ) {
 				if (CountCE[i] > 0) {
 					dtostrf(CountCE[i], 3, 0, CharVal);
 					L = u8g2.getUTF8Width(CharVal);
@@ -1463,6 +1008,347 @@ void lcd_ce_errors() {
 	}
 }
 
+//=============================================================================
+//============================== Основные функции  ============================
+//=============================================================================
+
+// Запись EEPROM
+void write_eeprom() {
+	analogWrite(BRIGHT_PIN, 0);
+	float Dst = Distance + DIST;
+	float DstAll = DistanceAll + DIST;
+
+	// Dst = 210;
+	//DstAll = 5998;
+	// FuelBurned = 15.6;
+	//FuelBurnedAll = 472;
+
+	for (byte i = 0; i < 4; i++ ) {
+		byte *pValue = (byte*)&Dst;
+		EEPROM.write(i, *(pValue + i)); 
+	}
+	for (byte i = 0; i < 4; i++ ) {
+		byte *pValue = (byte*)&DstAll;
+		EEPROM.write(i + 4, *(pValue + i)); 
+	}
+	for (byte i = 0; i < 4; i++ ) {
+		byte *pValue = (byte*)&FuelBurned;
+		EEPROM.write(i + 8, *(pValue + i)); 
+	}
+	for (byte i = 0; i < 4; i++ ) {
+		byte *pValue = (byte*)&FuelBurnedAll;
+		EEPROM.write(i + 12, *(pValue + i)); 
+	}
+	EEPROM.write(20, Bright); 
+
+	analogWrite(BRIGHT_PIN, Bright);
+	//Serial.println("EEPROM");
+}
+
+// Чтение буфера данных от SECU
+byte read_buff(byte b1) {
+	if (b1 == FESC) {
+		byte b2 = Serial.read();
+		if (b2 == TFOBEGIN)
+			return FOBEGIN;
+		else if (b2 == TFIOEND)
+			return FIOEND;
+		else if (b2 == TFESC)
+			return FESC;
+		return 0;
+	}
+	else {
+		return b1;
+	}
+}
+
+// Определение размера пакета данных
+void get_data_size() {
+	byte IncomingByte = 0;
+	byte Receive = 0;
+	byte N = 0;
+	byte Count = 0;
+
+	// Должно быть 5 пакетов одинаковой длины подряд
+	while (Count < 5) {
+		// Ждем символ начала пакета.
+		if (Receive == 0) {
+			if (Serial.available() > 1) {
+				if (Serial.read() == FOBEGIN) {
+					if (Serial.read() == 0x71) {
+						Receive = 1;
+						N = 0;
+					}
+				}
+			}
+		}
+		// Получаем и считаем байты
+		else  {
+			if (Serial.available() > 1) {
+				IncomingByte = Serial.read();
+				// Если получили завершающий байт.
+				if (IncomingByte == FIOEND) {
+					// Проверяем получившуюся длину пакета
+					if (DataSize == N) {
+						// Длина совпадает с предыдущим пакетом, счетчик +1
+						Count += 1;
+					}
+					else {
+						// Длина совпадает, сброс счетчика и по новой.
+						Count = 0;
+						DataSize = N;
+					}
+					Receive = 0;
+				}
+				else {
+					// Считаем кол-во байт с учетом символа подмены байта
+					if (IncomingByte == FESC) {Serial.read();}
+					N += 1;
+					// Если размер пакета превысил предел, сброс счетчика.
+					if (N > MAX_DATA_SIZE) {Count = 0;}
+				}
+			}
+		}
+	}
+	if (DataSize >= 74) {DataShift = 2;}
+}
+
+// Прием данных от SECU в буфер 
+void receive_data() {
+	byte IncomingByte = 0;
+	unsigned long Timer = millis();
+	byte Receive = 0;
+	byte N = 0;
+	DataOk = 0;
+
+	// Ждем символ начала пакета.
+	while (millis() - Timer < 250) {
+		if (Serial.available() > 1) {
+			if (Serial.read() == FOBEGIN) {
+				// Проверяем, что это нужный нам пакет с данными 0x71
+				if (Serial.read() == 0x71) {
+					Receive = 1;
+					break;
+				}
+			}
+		}
+		else {
+			button_update();
+			encoder_update();
+		}
+	}
+	if (Receive) {
+		Timer = millis();
+		while (millis() - Timer < 250) {
+			if (Serial.available() > 1) {
+				IncomingByte = Serial.read();
+				if (IncomingByte == FIOEND) {
+					if (N == DataSize) {
+						DataOk = 1;
+					}
+					break;
+				}
+				else {
+					// Записываем байт в буфер, начиная с 1, а не нуля.
+					N += 1;
+					if (N > DataSize) {break;}
+					Data[N] = read_buff(IncomingByte);
+				}
+			}
+			else {
+				button_update();
+				encoder_update();
+			}
+		}
+	}
+}
+
+// Сборка int из двух байт
+int build_int(byte i) {
+	int Value = 0;
+	byte *pValue = (byte*)&Value;
+	*pValue = Data[i + 1];  
+	*(pValue + 1) = Data[i];
+	return Value;
+}
+
+// Расчет скорости ТС
+float build_speed(byte i) {
+	// Коэффициент для вычисления скорости и дистанции
+	#define M_PERIOD_DISTANCE 1000.0 / SPEED_SENSOR_COUNT
+
+	unsigned int Value = 0;
+	byte* pValue = (byte*)&Value;
+	*pValue = Data[i + 1];  
+	*(pValue + 1) = Data[i];
+	if (Value != 0 && Value != 65535) {
+		float Period = (float) Value / 312500.0;
+		float Speed = (float)  ((M_PERIOD_DISTANCE / Period) * 3600.0) * 0.001;
+		Speed = constrain(Speed, 0, 333);
+		return Speed;
+	}
+	else {
+		return 0.0;
+	}
+}
+
+// Расчет пройденного пути
+float build_distance(byte i) {
+	unsigned long Value = 0;
+	byte* pValue = (byte*)&Value;
+	*pValue = Data[i + 2]; 
+	*(pValue + 1) = Data[i + 1];
+	*(pValue + 2) = Data[i];
+
+	float Dist = (float) (M_PERIOD_DISTANCE * Value) * 0.001;
+	return Dist;
+}
+
+// Сборка некоторых данных из байтов от SECU
+void build_data() {
+	if (DataOk) {
+		if (millis() - FuelTimer >= 500) {
+			DIST = build_distance(29 + DataShift);
+
+			// Расчет израсходованного топлива за интервал
+			float FF_FRQ = (float) build_int(32 + DataShift) * 0.00390625;  // 256
+			FF_FRQ = constrain(FF_FRQ, 0, 256);
+			if (FuelTimer > 0) {
+				float FFAVG = (float) (PrevFF_FRQ + FF_FRQ) * 0.1125; // Расход л/ч (3600 / 16000) / 2
+				FuelBurned += (float) FFAVG * (millis() - FuelTimer) / 3600000;
+				FuelBurnedAll += (float) FFAVG * (millis() - FuelTimer) / 3600000;
+			}
+			FuelTimer = millis();
+			PrevFF_FRQ = FF_FRQ;
+		}
+	}
+}
+
+// Разбор блока ошибок CE
+void check_ce_errors() {
+	byte BitsCount = 16;
+	if (DataSize >= 74) {BitsCount = MAX_CE_BITS_COUNT;}
+
+	// Собираем все байты CE в один кусок
+	uint32_t CE = 0;
+	byte *pValue = (byte*)&CE;
+	*pValue = Data[26];  
+	*(pValue + 1) = Data[25];
+	*(pValue + 2) = Data[24];
+	*(pValue + 3) = Data[23];
+
+	//StatusCE = 0;
+	for (byte i = 0; i < BitsCount; i++ ) {
+		// Проверяем изменение бита CE с 0 на 1
+		if (bitRead(CE, i) == 1 && bitRead(PrevCE, i) == 0) {
+			CountCE[i] = min(99, CountCE[i] + 1);
+		}
+		// Считаем количество ошибок CE в данный момент.
+		if (i != 15 && bitRead(CE, i) == 1) {
+			StatusCE = min(255, StatusCE + 1);
+		}
+	}
+	PrevCE = CE;
+}
+
+// Проверка состояние кнопки
+void button_update() {
+	// ButtonState 0 - выкл, 1 - короткое включение, 2 - исполнено,
+	//             3 - длинное включение, 5 - первый контакт.
+	if (!digitalRead(ENCODER_PIN_C)) {
+		if (ButtonState == 0) {
+			ButtonState = 5;
+			ButtonTimer = 0;
+		}
+	}
+	else {
+		if (ButtonState == 2) {
+			if (ButtonTimer >= 1) {
+				ButtonState = 0;
+			}
+		}
+		else if (ButtonState == 5) {
+			if (ButtonTimer >= 4) {
+				ButtonState = 3;
+			}
+			else {
+				ButtonState = 1;
+			}
+			ButtonTimer = 0;
+		}
+	}
+}
+
+// Проверка состояние энкодера
+void encoder_update() {
+	boolean PinState[2];
+	PinState[0] = digitalRead(ENCODER_PIN_A);
+	PinState[1] = digitalRead(ENCODER_PIN_B);
+
+	// Начальная позиция 11.
+	if (PinState[0] && PinState[1]) {
+		// Если переход на начальную позицию после шага 3,
+		// то выполняем комманду.
+		if (abs(EncoderState) == 3) {
+			EncoderState = EncoderState + EncoderState/abs(EncoderState);
+		}
+	}
+	// Первый шаг.
+	if (EncoderState == 0) {
+		// 10 +.
+		if (PinState[0] && !PinState[1]) {EncoderState += 1;}
+		// 01 -.
+		if (!PinState[0] && PinState[1]) {EncoderState -= 1;}
+	}
+	// Второй шаг.
+	if (abs(EncoderState) == 1) {
+		// 00 *2.
+		if (!PinState[0] && !PinState[1]) {EncoderState = EncoderState * 2;}  
+	}
+	// Третий шаг.
+	if (EncoderState == 2) {
+		// 01 +.
+		if (!PinState[0] && PinState[1]) {EncoderState += 1;}  
+	}
+	if (EncoderState == -2) {
+		// 10 -.
+		if (PinState[0] && !PinState[1]) {EncoderState -= 1;}  
+	}
+}
+
+// Колокольчик AE86
+void speed_chime() {
+	float SPD = 0.0;
+	SPD = build_speed(27 + DataShift);
+
+	//SPD = 101;
+
+	if (SpeedChimeStatus == 1) {
+		if (millis() - SpeedChimeTimer >= SPEED_CHIME_DELAY) {
+			digitalWrite(SPEED_CHIME_PIN, LOW);
+			SpeedChimeTimer = millis();
+			SpeedChimeStatus = 2;
+		}
+	}
+	else if (SpeedChimeStatus == 2) {
+		if (millis() - SpeedChimeTimer >= SPEED_CHIME_INTERVAL) {
+			SpeedChimeStatus = 0;
+		}
+	}
+
+	if (SpeedChimeStatus == 0) {
+		if (SPD > SPEED_CHIME_LIMIT) {
+			digitalWrite(SPEED_CHIME_PIN, HIGH);
+			SpeedChimeTimer = millis();
+			SpeedChimeStatus = 1;
+		}
+	}
+}
+
+//=============================================================================
+//=========================== Системные функции ===============================
+//=============================================================================
+// Инициальзация при включении 
 void setup() {
 	// Включаем прерывание на пине 2
 	pinMode(POWER_PIN, INPUT);
@@ -1531,18 +1417,32 @@ void setup() {
 			EEPROM.write(i, 0);
 		}
 	#endif
+
+	// Отображение заставки
 	draw_init(23, 0);
+
+	// Определение длины пакета
+	#ifndef DEBUG_MODE
+		get_data_size();
+	#endif
 }
 
+// Вспомогательный цикл
 void loop_2() {
 	button_update();
 	encoder_update();
-	receive_data();
+
+	#ifndef DEBUG_MODE
+		receive_data();
+	#endif
+
 	build_data();
 	check_ce_errors();
 
-	//DataOk = 1;
-	//LCDMode = 1;
+	#ifdef DEBUG_MODE
+		DataOk = 1;
+	#endif
+
 	if (abs(EncoderState) == 4) {
 		Bright = max(MIN_BRIGHT, min(255, Bright + EncoderState / abs(EncoderState) * 2));
 		analogWrite(BRIGHT_PIN, Bright);
@@ -1550,25 +1450,26 @@ void loop_2() {
 	}
 }
 
+// Основной цикл
 void loop() {
 	loop_2();
 
-	// Длительное нажатие кнопки - сброс суточного пробега
-	if (ButtonState == 3) {
-		Distance = -1 * DIST;
-		FuelBurned = 0.0;
-		write_eeprom();
-		ButtonState = 2;
-	}
-	
-	// Короткое нажатие кнопки - вход в режим замера разгона
-	if (ButtonState == 1) {
-		LCDMode = 1;
-		ButtonState = 2;
-	}
-
 	// Обновлять дисплей только при наличии данных
 	if (DataOk) {
+		// Длительное нажатие кнопки - сброс суточного пробега
+		if (ButtonState == 3) {
+			Distance = -1 * DIST;
+			FuelBurned = 0.0;
+			write_eeprom();
+			ButtonState = 2;
+		}
+		
+		// Короткое нажатие кнопки переход на следующий экран
+		if (ButtonState == 1) {
+			LCDMode += 1;
+			ButtonState = 2;
+		}
+
 		speed_chime();
 
 		if (millis() - LCDTimer >= LCD_UPDATE_DELAY) {
@@ -1579,8 +1480,9 @@ void loop() {
 			if (BoxState > 2) {BoxState = -1;}
 			// Основной экран
 			if (LCDMode == 0) {lcd_main();}
-			else if (LCDMode == 1) {lcd_acceleration();}
-			else if (LCDMode == 2) {lcd_ce_errors();}
+			else if (LCDMode == 1) {lcd_second();}
+			else if (LCDMode == 2) {lcd_acceleration();}
+			else if (LCDMode == 3) {lcd_ce_errors();}
 
 			#ifdef SHOW_RPM_TM1637
 				draw_rpm_tm1637();
