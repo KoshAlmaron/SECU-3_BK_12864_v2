@@ -2,7 +2,7 @@
 //=============================================================================
 //============================ Глобальные переменные ==========================
 //=============================================================================
-#define MAX_DATA_SIZE 86
+#define MAX_DATA_SIZE 90
 
 //  Массив байтов от SECU и флаг успешного получения данных
 byte DataOk = 0;
@@ -35,6 +35,11 @@ float FuelBurned = 0.0;
 float DistanceAll = 0.0;
 float FuelBurnedAll = 0.0;
 
+// Моточасы в секундах
+unsigned long EngineHours = 0;
+// Таймер для моточасов
+unsigned long EngineTimer = 0;
+
 // Энкодер
 char EncoderState = 0;
 // Состояние кнопки (0 - не нажата, 1 - нажата, 2 - обработана)
@@ -43,7 +48,6 @@ byte ButtonState = 0;
 byte ButtonTimer = 0;
 // Номер активного экрана
 byte LCDMode = 0;
-
 
 // Состояние колокольчика AE86
 byte SpeedChimeStatus = 0;
@@ -58,7 +62,11 @@ byte CountCE[21];
 uint32_t PrevCE;
 
 #ifdef TM1637_ENABLE
-	TM1637Display Display7S(TM1637_CLK_PIN, TM1637_DIO_PIN);
+	TM1637Display Display7S(TM1637_CLK_PIN, TM1637_DIO_PIN); // 28 байт
+#endif
+
+#ifdef DEBUG_MODE
+	unsigned long ProgramTimer = 0;
 #endif
 
 // Спекцсимволы в пакете данных
