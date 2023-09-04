@@ -437,74 +437,73 @@ void draw_lcd_main() { // 0
 	// Очищаем память дисплея
 	if (ScreenChange == 0) {u8g2.clearBuffer();}
 
-	// ========================== Блоки данных ==========================
-    draw_ff_fc_f(0, 0);    // Мгновенный расход топлива (F)	
-	
-    draw_water_temp_f(0, 22);    // Температура ОЖ (F)	
-	
-    draw_distance_f(0, 44);    // Суточный и общий пробег (F)	
-	
-    draw_map_f(43, 0);    // ДАД (F)	
-	
-    draw_trottle_f(43, 22);    // ДПДЗ / РХХ (F)	
-	
-    draw_afc_f(43, 44);    // Средний расход топлива суточный и общий (F)	
-	
-    draw_O2_sensor_h(86, 0);    // Напряжение УДК / AFR (H)	
-    draw_lambda_corr_h(86, 10);    // Лямбда коррекция (H)	
-    draw_airtemp_h(86, 22);    // Температура воздуха на впуске (H)	
-    draw_battery_h(86, 32);    // Напряжение сети (H)	
-    draw_fuel_burned_f(86, 44);    // Израсходованное топливо (F)	
-	// ========================== Блоки данных ==========================
+	  // ========================== Блоки данных ==========================
+    draw_ff_fc_f(0, 0);    // Мгновенный расход топлива (F)  
+  
+    draw_battery_f(0, 22);    // Напряжение сети (F)  
+  
+    draw_distance_f(0, 44);    // Суточный и общий пробег (F) 
+  
+    draw_water_temp_f(43, 0);    // Температура ОЖ (F)  
+  
+    draw_airtemp_f(43, 22);    // Температура воздуха на впуске (F) 
+  
+    draw_fuel_burned_f(43, 44);    // Израсходованное топливо (F) 
+  
+    draw_O2_sensor_f(86, 0);    // Напряжение УДК / AFR (F) 
+  
+    draw_lambda_corr_f(86, 22);    // Лямбда коррекция (F)  
+  
+    draw_afc_f(86, 44);    // Средний расход топлива суточный и общий (F) 
+  // ========================== Блоки данных ==========================
 
 
-	// Линии разметки
-	u8g2.drawHLine(0, 21, 128);
-	u8g2.drawHLine(0, 43, 128);
-	u8g2.drawVLine(42, 0, 64);
-	u8g2.drawVLine(85, 0, 64);
+  // Линии разметки
+  u8g2.drawHLine(0, 21, 128);
+  u8g2.drawHLine(0, 43, 128);
+  u8g2.drawVLine(42, 0, 64);
+  u8g2.drawVLine(85, 0, 64);
 
-	// Рамка при появлении ошибок CE
-	if (StatusCE > 0 && AlarmBoxState > 0) {
-		u8g2.drawFrame(0, 0, 128, 64);
-		StatusCE = 0;
-	}
-	
-	// Блок параметра яркости БК
-	draw_config_box();
+  // Рамка при появлении ошибок CE
+  if (StatusCE > 0 && AlarmBoxState > 0) {
+    u8g2.drawFrame(0, 0, 128, 64);
+    StatusCE = 0;
+  }
+  
+  // Блок параметра яркости БК
+  draw_config_box();
 
-	// Проверка ДАДМ
-	oil_pressure_state(1);
+  // Проверка ДАДМ
+  oil_pressure_state(1);
 
-	// Отсылаем данные на дисплей
-	if (ScreenChange == 0) {u8g2.sendBuffer();}
+  // Отсылаем данные на дисплей
+  if (ScreenChange == 0) {u8g2.sendBuffer();}
 }
 
 // Второй экран
 void draw_lcd_second() { // 0 
-	// Очищаем память дисплея
-	if (ScreenChange == 0) {u8g2.clearBuffer();}
+  // Очищаем память дисплея
+  if (ScreenChange == 0) {u8g2.clearBuffer();}
 
-	// ========================== Блоки данных ==========================
-    draw_rpm_f(0, 0);    // Обороты (F)	
-	
-    draw_speed_f(0, 22);    // Скорость (F)	
-	
-    draw_water_temp_f(0, 44);    // Температура ОЖ (F)	
-	
-    draw_map_f(43, 0);    // ДАД (F)	
-	
-    draw_airtemp_h(43, 22);    // Температура воздуха на впуске (H)	
-    draw_angle_h(43, 32);    // Текущий УОЗ (H)	
-    draw_fan_pwm_f(43, 44);    // Вентилятор охлаждения % ШИМ (F)	
-	
-    draw_O2_sensor_f(86, 0);    // Напряжение УДК / AFR (F)	
-	
-    draw_inj_duty_f(86, 22);    // Загрузка форсунок (F)	
-	
-    draw_salon_temp_f(86, 44);    // Датчик температуры DS18B20 (F)	
-	// ========================== Блоки данных ==========================
-
+  // ========================== Блоки данных ==========================
+    draw_inj_duty_f(0, 0);    // Загрузка форсунок (F)  
+  
+    draw_trottle_f(0, 22);    // ДПДЗ / РХХ (F) 
+  
+    draw_engine_hours_f(0, 44);    // Счетчик моточасов (F) 
+  
+    draw_map_f(43, 0);    // ДАД (F)  
+  
+    draw_air_map_index_f(43, 22);    // Номер расхода воздуха (F) 
+  
+    draw_rpm_f(43, 44);    // Обороты (F) 
+  
+    draw_angle_h(86, 0);    // Текущий УОЗ (H)  
+  
+    draw_egt_f(86, 22);    // Температура выхлопных газов (F) 
+  
+    draw_speed_f(86, 44);    // Скорость (F)  
+  // ========================== Блоки данных ==========================
 	// Линии разметки
 	u8g2.drawHLine(0, 21, 128);
 	u8g2.drawHLine(0, 43, 128);
@@ -2522,8 +2521,14 @@ void button_action() {
 	#ifdef ENCODER_CONTROL
 		encoder_update();
 		// Энкодер является заменителем кнопок вверх/вниз. 
-		if (EncoderState == 4) {ButtonState[0] = 32;}
-		else if (EncoderState == -4) {ButtonState[1] = 32;}
+		if (EncoderState == 4) {
+			ButtonState[0] = 32;
+			EncoderState = 0;
+		}
+		else if (EncoderState == -4) {
+			ButtonState[1] = 32;
+			EncoderState = 0;
+		}
 	#endif
 
 	// Выполнение команд от кнопок
@@ -2644,7 +2649,7 @@ void setup() { // 0
 
 	// Вход для проверки состояния габаритов
 	#ifndef AUTO_BRIGHT_ENABLE
-		pinMode(INT_LIGHT_PIN, INPUT);
+		pinMode(INT_LIGHT_PIN, INPUT_PULLUP);
 	#endif
 
 	// Выход управления питанием

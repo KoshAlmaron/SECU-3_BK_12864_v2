@@ -47,7 +47,7 @@
 */
 
 // Управление энкодером
-//#define ENCODER_CONTROL
+#define ENCODER_CONTROL
 // Кнопки
 #define BUTTON_UP_PIN A3		// Вверх (Encoder A)
 #define BUTTON_DOWN_PIN A1		// Вниз (Encoder B)
@@ -56,7 +56,7 @@
 
 // Входы для проверки состояний
 #define INT_IGN_PIN 7			// Замка зажигания
-//#define INT_LIGHT_PIN 8		// Габаритов (Не используется при авто управлении яркостью)
+#define INT_LIGHT_PIN 8		// Габаритов (Не используется при авто управлении яркостью)
 #define INT_OIL_PIN 6			// Датчика аварийного давления масла (Опционально)
 
 // Выход управления питанием
@@ -69,7 +69,7 @@
 //#define PWM_BRIGHT_PIN 3		// Приборной панели (Опционально)
 
 // Авто управление яркостью, раскомментировать для включения (Опционально)
-#define AUTO_BRIGHT_ENABLE
+//#define AUTO_BRIGHT_ENABLE
 #define AUTO_BRIGHT_PIN A5		// Фоторезистор регулировки яркости
 
 // SPI дисплей
@@ -110,7 +110,7 @@
 //=============================================================================
 
 // Число импульсов датчика скорости на 1 км
-#define SPEED_SENSOR_COUNT 6000
+#define SPEED_SENSOR_COUNT 2650
 
 // Усреднение показаний уровня топлива, 
 // чем больше число, тем медленее меняются показания.
@@ -167,7 +167,7 @@
 
 // Пороги значений для температуры ОЖ
 #define WATER_TEMP_MIN -30.0
-#define WATER_TEMP_MAX 96.0
+#define WATER_TEMP_MAX 98.0
 
 // Пороги значений для температуры воздуха
 #define AIR_TEMP_MIN -20.0
@@ -179,7 +179,7 @@
 
 // Порог значений для ШДК
 #define LAMBDA_AFR_MIN 12.0
-#define LAMBDA_AFR_MAX 15.2
+#define LAMBDA_AFR_MAX 16.2
 
 // Порог значений наддува
 #define OVERBOOST_LIMIT 176.0
@@ -193,7 +193,7 @@
 #define BATT_VOLT_MAX 14.5
 
 // Порог значений оборотов
-#define RPM_LIMIT 5500
+#define RPM_LIMIT 6500
 
 // Резерв топлива
 #define FUEL_TANK_MIN 10.0
@@ -206,4 +206,4 @@
 #define OIL_PRESSURE_MAX 5.0
 
 // Лимит скорости
-#define SPEED_CHIME_LIMIT 100
+#define SPEED_CHIME_LIMIT 110
