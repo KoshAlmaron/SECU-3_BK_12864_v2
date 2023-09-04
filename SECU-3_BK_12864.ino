@@ -13,6 +13,9 @@
 						 - Добавил возможность выбора числа импульсов датчика 
 								скорости на 1 км.
 	2021-02-19 - Добавил экран замера разгона 0-100.
+	2021-04-25 - Изменил размер пакета для версии 4.9 от 14.04.2021
+	2021-06-20 - Добавил сигнализацию превышения скорости (колокольчик AE86). 
+	2021-07-27 - Добавил экран ошибок CE.
 
 
 	0 - Прием данных от SECU
@@ -33,7 +36,7 @@
 	A0 - 
 	A1 - 
 	A2 - 
-	A3 - 
+	A3 - Speed Chime
 	A4 - 
 	A5 - 
 */
@@ -41,6 +44,29 @@
 #include <U8g2lib.h>
 #include <EEPROM.h>
 #include <avr/pgmspace.h>
+
+// Раскомментировать один блок для нужной версии прошивки
+
+// Прошивка v4.7
+//#define DATA_ARRAY_SIZE 66
+//#define V49_DATA_SHIFT 0
+//#define CE_BITS_COUNT 16
+
+// Прошивка v4.8
+//#define DATA_ARRAY_SIZE 68
+//#define V49_DATA_SHIFT 0
+//#define CE_BITS_COUNT 16
+
+// Прошивка v4.9 до 14.04.2021
+//#define V49_DATA_SHIFT 2
+//#define DATA_ARRAY_SIZE 75
+//#define CE_BITS_COUNT 16
+
+// Прошивка v4.9 с 14.04.2021
+#define V49_DATA_SHIFT 2
+#define DATA_ARRAY_SIZE 81
+#define CE_BITS_COUNT 21
+
 
 // Число импульсов датчика скорости на 1 км
 #define SPEED_SENSOR_COUNT 6000
@@ -75,17 +101,6 @@
 // Пороги напряжения сети
 #define BATT_VOLT_MIN 12.0
 #define BATT_VOLT_MAX 14.5
-
-// Закомментировать для прошивки v4.8 и ниже.
-#define SECU_DATA_V49
-
-#ifdef SECU_DATA_V49
-	#define V49_DATA_SHIFT 2
-	#define DATA_ARRAY_SIZE 75
-#else
-	#define DATA_ARRAY_SIZE 68
-	#define V49_DATA_SHIFT 0
-#endif
 
 //  Массив байтов от SECU и флаг успешного получения данных
 byte Data[DATA_ARRAY_SIZE + 2];
@@ -128,6 +143,26 @@ byte Bright;
 #define MIN_BRIGHT 121
 #define STD_BRIGHT 180
 
+// Колокольчик AE86
+#define SPEED_CHIME_PIN 8
+// Лимит скорости
+#define SPEED_CHIME_LIMIT 100
+// Интервал включения и время удержания
+#define SPEED_CHIME_INTERVAL 1000
+#define SPEED_CHIME_DELAY 380
+//Состояние колокольчика
+byte SpeedChimeStatus = 0;
+// Таймер для колокольчика
+unsigned long SpeedChimeTimer = 0;
+
+
+// Наличие ошибок CE
+byte StatusCE = 0;
+// Количество ошибок
+byte CountCE[CE_BITS_COUNT];
+// Предыдущее состояние
+uint32_t PrevCE;
+
 // Настройка LCD дисплея
 U8G2_ST7920_128X64_F_HW_SPI u8g2(U8G2_R0, 10);
 
@@ -144,6 +179,11 @@ void write_eeprom() {
 	analogWrite(BRIGHT_PIN, 0);
 	float Dst = Distance + DIST;
 	float DstAll = DistanceAll + DIST;
+
+	// Dst = 210;
+	// DstAll = 2100;
+	// FuelBurned = 15.6;
+	// FuelBurnedAll = 164.1;
 
 	for (byte i = 0; i < 4; i++ ) {
 		byte *pValue = (byte*)&Dst;
@@ -323,10 +363,8 @@ void encoder_update() {
 		// Если переход на начальную позицию после шага 3,
 		// то выполняем комманду.
 		if (abs(EncoderState) == 3) {
-			Bright = max(MIN_BRIGHT, min(255, Bright + EncoderState / abs(EncoderState) * 2));
-			analogWrite(BRIGHT_PIN, Bright);
+			EncoderState = EncoderState + EncoderState/abs(EncoderState);
 		}
-		EncoderState = 0;
 	}
 	// Первый шаг.
 	if (EncoderState == 0) {
@@ -348,6 +386,34 @@ void encoder_update() {
 	if (EncoderState == -2) {
 		// 10 -.
 		if (PinState[0] && !PinState[1]) {EncoderState -= 1;}  
+	}
+}
+
+void speed_chime() {
+	float SPD = 0.0;
+	SPD = build_speed(27 + V49_DATA_SHIFT);
+
+	//SPD = 101;
+
+	if (SpeedChimeStatus == 1) {
+		if (millis() - SpeedChimeTimer >= SPEED_CHIME_DELAY) {
+			digitalWrite(SPEED_CHIME_PIN, LOW);
+			SpeedChimeTimer = millis();
+			SpeedChimeStatus = 2;
+		}
+	}
+	else if (SpeedChimeStatus == 2) {
+		if (millis() - SpeedChimeTimer >= SPEED_CHIME_INTERVAL) {
+			SpeedChimeStatus = 0;
+		}
+	}
+
+	if (SpeedChimeStatus == 0) {
+		if (SPD > SPEED_CHIME_LIMIT) {
+			digitalWrite(SPEED_CHIME_PIN, HIGH);
+			SpeedChimeTimer = millis();
+			SpeedChimeStatus = 1;
+		}
 	}
 }
 
@@ -503,6 +569,40 @@ const unsigned char MAP2_bits[] PROGMEM = {
 	0xf8, 0x00, 0x04, 0x01, 0x82, 0x02, 0xc1, 0x04, 0x61, 0x04, 0x71, 0x04,
 	0x21, 0x04, 0x01, 0x04, 0x02, 0x02, 0x04, 0x01, 0xf8, 0x00, 0x50, 0x00,
 	0x50, 0x00, 0x50, 0x00, 0xdf, 0x07, 0x00, 0x00, 0xff, 0x07 };
+
+#define Next_width 11
+#define Next_height 7
+const unsigned char Next_bits[] PROGMEM = {
+   0x01, 0x04, 0x03, 0x06, 0x06, 0x03, 0x8c, 0x01, 0xd8, 0x00, 0x70, 0x00,
+   0x20, 0x00 };
+
+// Ошибки CE
+const char CEItem_0[] PROGMEM =  "CKPS MALFUNCTION";
+const char CEItem_1[] PROGMEM =  "EEPROM BROKEN   ";
+const char CEItem_2[] PROGMEM =  "PROGRAM BROKEN  ";
+const char CEItem_3[] PROGMEM =  "KSP CHIP FAILED ";
+const char CEItem_4[] PROGMEM =  "KNOCK DETECTED  ";
+const char CEItem_5[] PROGMEM =  "MAP SENSOR FAIL ";
+const char CEItem_6[] PROGMEM =  "TEMP SENSOR FAIL";
+const char CEItem_7[] PROGMEM =  "VOLT SENSOR FAIL";
+const char CEItem_8[] PROGMEM =  "DWELL CONTROL   ";
+const char CEItem_9[] PROGMEM =  "CAMS MALFUNCTION";
+const char CEItem_10[] PROGMEM = "TPS SENSOR FAIL ";
+const char CEItem_11[] PROGMEM = "ADD I1 SENSOR   ";
+const char CEItem_12[] PROGMEM = "ADD I2 SENSOR   ";
+const char CEItem_13[] PROGMEM = "ADD I3 SENSOR   ";
+const char CEItem_14[] PROGMEM = "ADD I4 SENSOR   ";
+const char CEItem_15[] PROGMEM = "SYS START       ";
+const char CEItem_16[] PROGMEM = "ADD I5 SENSOR   ";
+const char CEItem_17[] PROGMEM = "ADD I6 SENSOR   ";
+const char CEItem_18[] PROGMEM = "ADD I7 SENSOR   ";
+const char CEItem_19[] PROGMEM = "ADD I8 SENSOR   ";
+const char CEItem_20[] PROGMEM = "ECU ERROR COUNT ";
+
+const char* const CEItemsArray[] PROGMEM = {CEItem_0, CEItem_1
+  , CEItem_2, CEItem_3, CEItem_4, CEItem_5, CEItem_6, CEItem_7
+  , CEItem_8, CEItem_9, CEItem_10, CEItem_11, CEItem_12
+  , CEItem_13, CEItem_14, CEItem_15, CEItem_16, CEItem_17, CEItem_18, CEItem_19, CEItem_20};
 
 void draw_ff_fc(byte x, byte y) {
 	float FF_FRQ = (float) build_int(32 + V49_DATA_SHIFT) * 0.00390625;  // 256
@@ -857,6 +957,12 @@ void lcd_main() {
 	u8g2.drawVLine(43, 0, 64);
 	u8g2.drawVLine(85, 0, 64);
 
+	// Рамка при появлении ошибок CE
+	if (StatusCE > 0 && BoxState > 0) {
+		u8g2.drawFrame(0, 0, 128, 64);
+		StatusCE = 0;
+	}
+	
 	// Отсылаем данные на дисплей
 	u8g2.sendBuffer();
 }
@@ -879,18 +985,16 @@ void lcd_acceleration() {
 	byte Mode = 0;
 
 	while (LCDMode == 1) {
-		button_update();
-		encoder_update();
-		receive_data();
-		build_data();
+		loop_2();
 
+		// Сброс длительного нажатия кнопки
 		if (ButtonState == 3) {
-			ButtonState = 0;
+			ButtonState = 2;
 		}
 
-		// Выход из режима замера разгона
+		// Выход из экрана замера разгона
 		if (ButtonState == 1) {
-			LCDMode = 0;
+			LCDMode = 2;
 			ButtonState = 2;
 		}
 
@@ -1003,6 +1107,108 @@ void lcd_acceleration() {
 	}
 }
 
+void check_ce_errors() {
+	// Собираем все байты CE в один кусок
+	uint32_t CE = 0;
+	byte *pValue = (byte*)&CE;
+	*pValue = Data[26];  
+	*(pValue + 1) = Data[25];
+	*(pValue + 2) = Data[24];
+	*(pValue + 3) = Data[23];
+
+	//StatusCE = 0;
+	for (byte i = 0; i < CE_BITS_COUNT; i++ ) {
+		// Проверяем изменение бита CE с 0 на 1
+		if (bitRead(CE, i) == 1 && bitRead(PrevCE, i) == 0) {
+			CountCE[i] = min(99, CountCE[i] + 1);
+		}
+		// Считаем количество ошибок CE в данный момент.
+		if (i != 15 && bitRead(CE, i) == 1) {
+			StatusCE = min(255, StatusCE + 1);
+		}
+	}
+	PrevCE = CE;
+}
+
+void lcd_ce_errors() {
+	#define ROWS_ON_SCREEN 5
+	byte StartRow = 0;
+	byte Row = 0;
+	byte OverRow = 0;
+	uint32_t CE = 0;
+	char CharVal[4];
+	char CEItemChar[25];
+	byte H;
+	byte L;
+
+	while (LCDMode == 2) {
+		loop_2();
+
+		// Сброс ошибок при длительном нажатия кнопки
+		if (ButtonState == 3) {
+			for (byte i = 0; i < CE_BITS_COUNT; i++ ) {
+				CountCE[i] = 0;
+			}
+			ButtonState = 2;
+		}
+		
+		if (ButtonState == 1) {
+			// Перелистывание ошибок
+			if (OverRow > 0) {
+				StartRow = OverRow;
+				OverRow = 0;
+			}
+			// Выход из экрана ошибок CE
+			else {
+				LCDMode = 0;
+			}
+			ButtonState = 2;
+		}
+
+		if (millis() - LCDTimer >= 350) {
+			LCDTimer = millis();
+			ButtonTimer = min(255, ButtonTimer + 1);
+		
+			// Очищаем память дисплея
+			u8g2.clearBuffer();
+
+			//u8g2.setFont(u8g2_font_lucasfont_alternate_tr);
+			u8g2.setFont(u8g2_font_haxrcorp4089_tr);
+			//u8g2.setFont(u8g2_font_mozart_nbp_tr);
+			H = u8g2.getAscent();
+
+ 			Row = 1;
+			for (byte i = StartRow; i < CE_BITS_COUNT; i++ ) {
+				if (CountCE[i] > 0) {
+					dtostrf(CountCE[i], 3, 0, CharVal);
+					L = u8g2.getUTF8Width(CharVal);
+					// Выковыриваем строку текста из программной памяти
+					strcpy_P(CEItemChar, (char*)pgm_read_word(&(CEItemsArray[i])));
+					u8g2.drawUTF8(1, (Row - 1) * (H + 4) + H + 1, CEItemChar);
+					u8g2.drawUTF8(127 - L, (Row - 1) * (H + 4) + H + 1, CharVal);
+					Row += 1;
+
+					// Если ошибок больше чем строк на экране
+					if (Row > ROWS_ON_SCREEN) {
+						OverRow = i + 1;
+						u8g2.drawXBMP(64 - 5, 64 - 8, Next_width, Next_height, Next_bits);
+						break;
+					}
+					OverRow = 0;
+				}
+			}
+			// Если нет ни одной ошибки
+			if (Row == 1) {
+				u8g2.setCursor(38, 32 + 3);
+				u8g2.print(F("NO ERRORS"));
+			}
+
+			// Отсылаем данные на дисплей
+			u8g2.sendBuffer();
+		}
+	}
+}
+
 void setup() {
 	// Включаем прерывание на пине 2
 	pinMode(POWER_PIN, INPUT);
@@ -1045,6 +1251,10 @@ void setup() {
 	}
 	pinMode(BRIGHT_PIN, OUTPUT);
 
+	// Пин управления колокольчиком
+	pinMode(SPEED_CHIME_PIN, OUTPUT);
+	digitalWrite(SPEED_CHIME_PIN, LOW);
+
 	Serial.begin(115200);
 
 	// Старт дисплея
@@ -1056,16 +1266,29 @@ void setup() {
 	// Режим XOR при отрисовке текста
 	u8g2.setDrawColor(2);
 	
+	//write_eeprom();
 	draw_init(23, 0);
 }
 
-void loop() {
+void loop_2() {
 	button_update();
 	encoder_update();
 	receive_data();
 	build_data();
+	check_ce_errors();
 
 	//DataOk = 1;
+	//LCDMode = 2;
+
+	if (abs(EncoderState) == 4) {
+		Bright = max(MIN_BRIGHT, min(255, Bright + EncoderState / abs(EncoderState) * 2));
+		analogWrite(BRIGHT_PIN, Bright);
+		EncoderState = 0;
+	}
+}
+
+void loop() {
+	loop_2();
 
 	// Длительное нажатие кнопки - сброс суточного пробега
 	if (ButtonState == 3) {
@@ -1079,13 +1302,12 @@ void loop() {
 	if (ButtonState == 1) {
 		LCDMode = 1;
 		ButtonState = 2;
-		if (DataOk) {
-			lcd_acceleration();
-		}
 	}
 
 	// Обновлять дисплей только при наличии данных
 	if (DataOk) {
+		speed_chime();
+
 		if (millis() - LCDTimer >= 500) {
 			LCDTimer = millis();
 
@@ -1093,7 +1315,9 @@ void loop() {
 			BoxState += 1;
 			if (BoxState > 2) {BoxState = -1;}
 			// Основной экран
-			lcd_main();
+			if (LCDMode == 0) {lcd_main();}
+			else if (LCDMode == 1) {lcd_acceleration();}
+			else if (LCDMode == 2) {lcd_ce_errors();}
 		}
 	}
 }
