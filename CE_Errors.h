@@ -1,7 +1,7 @@
 //=============================================================================
 //================================= Ошибки CE =================================
 //=============================================================================
-const char CEItem_0[] PROGMEM =  "CKPS MALFUNCTION";
+const char CEItem_0[] PROGMEM =  "CKPS FAIL       ";
 const char CEItem_1[] PROGMEM =  "EEPROM BROKEN   ";
 const char CEItem_2[] PROGMEM =  "PROGRAM BROKEN  ";
 const char CEItem_3[] PROGMEM =  "KSP CHIP FAILED ";
@@ -10,7 +10,7 @@ const char CEItem_5[] PROGMEM =  "MAP SENSOR FAIL ";
 const char CEItem_6[] PROGMEM =  "TEMP SENSOR FAIL";
 const char CEItem_7[] PROGMEM =  "VOLT SENSOR FAIL";
 const char CEItem_8[] PROGMEM =  "DWELL CONTROL   ";
-const char CEItem_9[] PROGMEM =  "CAMS MALFUNCTION";
+const char CEItem_9[] PROGMEM =  "CAMS FAIL       ";
 const char CEItem_10[] PROGMEM = "TPS SENSOR FAIL ";
 const char CEItem_11[] PROGMEM = "ADD I1 SENSOR   ";
 const char CEItem_12[] PROGMEM = "ADD I2 SENSOR   ";

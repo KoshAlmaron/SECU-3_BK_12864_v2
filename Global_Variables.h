@@ -70,10 +70,12 @@ byte LCDMode = 0;
 // Номк экрана ошибок CE
 #define LCD_MODE_CE 3
 
+#ifdef SPEED_CHIME_PIN
 // Состояние колокольчика AE86
 byte SpeedChimeStatus = 0;
 // Таймер для колокольчика
 unsigned long SpeedChimeTimer = 0;
+#endif
 
 // Наличие ошибок CE
 byte StatusCE = 0;

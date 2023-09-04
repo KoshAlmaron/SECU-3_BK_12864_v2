@@ -82,13 +82,10 @@
 	2021-11-06 - Добавил управление подсветкой приборной панели.
 					Яркость приборной панели регулируется на дополнительном экране.
 	2021-11-08 - Добавил экран завершения.
-
+	2021-11-11 - Уменьшил количество использованных шрифтов, это осовободило 2,5 КБ flash памяти.
+				- Исправил несколько ошибок в коде новых функций.
 
 	ПЛАН:
-	 - Управление кнопками, 2021-11-04
-	 - Шим подсветка приборки, 2021-11-06
-	 - Постоянное питание БК, 2021-11-05
-	 - Экран завершения, 2021-11-08
 	 - Экран при выключенном зажигании,
 	 - Дисплей на MAX7219.
 */
@@ -143,6 +140,530 @@
 U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI u8g2(U8G2_R0, SPI_CS_RS_PIN, SPI_DC_PIN);
 
 //=============================================================================
+//===================== Функциия отрисовки экранов ============================
+//=============================================================================
+// Экран приветствия
+void draw_init() { // 20
+	#define STEP_DELAY_TM1637 100
+	#define STEP_DELAY_LCD 35
+	
+	//ШИМ подсветка приборной панели на минимум
+	#ifdef PWM_BRIGHT_PIN
+		analogWrite(PWM_BRIGHT_PIN, PWM_BRIGHT_MIN);
+	#endif
+	
+	// Очищаем LCD дисплей
+	u8g2.clear();
+	#ifdef LCD_BRIGHT_PIN
+		analogWrite(LCD_BRIGHT_PIN, LCD_BRIGHT_MIN);
+	#else
+		u8g2.setContrast(0);
+	#endif
+
+
+	#ifdef TM1637_ENABLE
+		Display7S.setBrightness(0, false);
+		Display7S.clear();
+		// Таймер для TM1637 дисплея
+		unsigned long InitSegmentTimer = millis();
+		byte TM1637BrightBuffer = 0;
+		byte Data[4];
+		byte Segment[] = {0b00000001,
+							0b00000011,
+							0b00000111,
+							0b00001111,
+							0b00011110,
+							0b00111100,
+							0b00111001,
+							0b00110001,
+							0b00100001,
+							0b00000001,
+							0b00000000};
+	#endif
+
+	// Таймер для LCD дисплея
+	unsigned long InitLCDTimer = millis();
+	// Шаг изменения подсветки экрана
+	byte BrightStepLCD = (BrightLCD[BrightMode] - LCD_BRIGHT_MIN) / 31;
+	// Шаг изменения подсветки приборной панели
+	byte BrightStepPWM = (BrightPWM[BrightMode] - PWM_BRIGHT_MIN) / 31;
+
+	byte State = 0;
+	byte i = 0;
+	byte j = 0;
+
+	while (1) {
+		if (millis() - InitLCDTimer >= STEP_DELAY_LCD) {
+			if (j < 32) {
+
+				#ifdef PWM_BRIGHT_PIN
+					analogWrite(PWM_BRIGHT_PIN, PWM_BRIGHT_MIN + j * BrightStepPWM);
+				#endif
+				
+				#ifdef LCD_BRIGHT_PIN
+					analogWrite(LCD_BRIGHT_PIN, LCD_BRIGHT_MIN + j * BrightStepLCD);
+				#else
+					u8g2.setContrast(j * BrightStepLCD);
+				#endif
+
+				u8g2.clearBuffer();
+				u8g2.setClipWindow(0, 31 - j, 127, 32 + j);
+				// Заставка
+				u8g2.drawXBMP(23, 0, Trollface_width, Trollface_height, Trollface_bits);
+				u8g2.sendBuffer();
+				j++;
+			}
+			#ifndef TM1637_ENABLE
+				else {
+					break;
+				}
+			#endif
+			InitLCDTimer = millis();
+		}
+		#ifdef TM1637_ENABLE
+			if (millis() - InitSegmentTimer >= STEP_DELAY_TM1637) {
+				TM1637BrightBuffer = min(TM1637Bright, TM1637BrightBuffer += 4);
+				byte Buffer = TM1637BrightBuffer / TM1637_BRIGHT_STEP;
+				Display7S.setBrightness(Buffer);
+				if (State == 0) {
+					for (byte k = 0; k < 4; k++) {
+						Data[k] = Segment[i];
+					}
+					Display7S.setSegments(Data);
+					i++;
+					if (i >= 10) {
+						State = 1;
+						i = 0;
+					}
+				}
+				else if (State == 1) {
+					Data[i] = 0b00000000;
+					Display7S.setSegments(Data);
+					i++;
+					if (i >= 3) {
+						State = 2;
+						i = 0;
+					}
+				}
+				else if (State == 2) {
+					Data[3] = Data[3] << 1;
+					Data[3] += 1;
+					Display7S.setSegments(Data);
+					i++;
+					if (i >= 5) {
+						byte Buffer = TM1637Bright / TM1637_BRIGHT_STEP;
+						Display7S.setBrightness(Buffer);
+						break;
+					}
+				}
+				InitSegmentTimer = millis();
+			}
+		#endif
+	}
+	#ifdef LCD_BRIGHT_PIN
+		analogWrite(LCD_BRIGHT_PIN, BrightLCD[BrightMode]);
+	#else
+		u8g2.setContrast(BrightLCD[BrightMode]);
+	#endif
+	#ifdef PWM_BRIGHT_PIN
+		analogWrite(PWM_BRIGHT_PIN, BrightPWM[BrightMode]);
+	#endif
+				
+	lcd_main();
+}
+
+void draw_finish() {
+	#define ROW_SPACE 7
+	#define ROW_SHIFT 5
+	//RideTimer = 600001;
+	//DIST = 12.15;
+	//FuelBurnedRide = 2.2;
+
+	char CharVal[7];
+	byte Row;
+	byte H;
+	byte L;
+	u8g2.setFont(u8g2_font_helvB08_tr);
+	H = u8g2.getAscent();
+
+	u8g2.clearBuffer();
+	// Строка 1 - Время поездки в минутах
+	Row = 1;
+	float TimeM = (float) RideTimer / 60;
+	dtostrf(TimeM, 6, 1, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.setCursor(1, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT);
+	u8g2.print(F("Travel Time"));
+	u8g2.drawUTF8(120 - L, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT, CharVal);
+
+	// Строка 2 - Пройденное расстояние
+	Row = 2;
+	dtostrf(DIST, 5, 1, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.setCursor(1, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT);
+	u8g2.print(F("Distance Traveled"));
+	u8g2.drawUTF8(120 - L, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT, CharVal);
+
+	// Строка 3 - Израсходовано топлива
+	Row = 3;
+	dtostrf(FuelBurnedRide, 5, 1, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.setCursor(1, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT);
+	u8g2.print(F("Fuel Consumed"));
+	u8g2.drawUTF8(120 - L, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT, CharVal);
+
+	// Строка 4 - Средняя скорость
+	Row = 4;
+	float AVGSpeed = 0;
+	if (TimeM) {AVGSpeed = (float) DIST * (60 / TimeM);}
+	dtostrf(AVGSpeed, 5, 1, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.setCursor(1, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT);
+	u8g2.print(F("Average Speed"));
+	u8g2.drawUTF8(120 - L, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT, CharVal);
+	u8g2.sendBuffer();
+}
+
+// Основной экран
+void lcd_main() { // 0
+	// Очищаем память дисплея
+	u8g2.clearBuffer();
+
+	// ========================== Блоки данных ==========================
+    draw_ff_fc_f(0, 0);    // Мгновенный расход топлива (F)	
+	
+    draw_water_temp_f(0, 22);    // Температура ОЖ (F)	
+	
+    draw_distance_f(0, 44);    // Суточный и общий пробег (F)	
+	
+    draw_map_f(43, 0);    // ДАД (F)	
+	
+    draw_trottle_f(43, 22);    // ДПДЗ / РХХ (F)	
+	
+    draw_afc_f(43, 44);    // Средний расход топлива суточный и общий (F)	
+	
+    draw_O2_sensor_h(86, 0);    // Напряжение УДК / AFR (H)	
+    draw_lambda_corr_h(86, 10);    // Лямбда коррекция (H)	
+    draw_airtemp_h(86, 22);    // Температура воздуха на впуске (H)	
+    draw_battery_h(86, 32);    // Напряжение сети (H)	
+    draw_fuel_burned_f(86, 44);    // Израсходованное топливо (F)	
+	// ========================== Блоки данных ==========================
+
+
+	// Линии разметки
+	u8g2.drawHLine(0, 21, 128);
+	u8g2.drawHLine(0, 43, 128);
+	u8g2.drawVLine(42, 0, 64);
+	u8g2.drawVLine(85, 0, 64);
+
+	// Рамка при появлении ошибок CE
+	if (StatusCE > 0 && AlarmBoxState > 0) {
+		u8g2.drawFrame(0, 0, 128, 64);
+		StatusCE = 0;
+	}
+	
+	// Блок параметра яркости
+	draw_bright();
+
+	// Отсылаем данные на дисплей
+	u8g2.sendBuffer();
+}
+
+// Второй экран
+void lcd_second() { // 0 
+	// Очищаем память дисплея
+	u8g2.clearBuffer();
+
+	// ========================== Блоки данных ==========================
+    draw_rpm_f(0, 0);    // Обороты (F)	
+	
+    draw_speed_f(0, 22);    // Скорость (F)	
+	
+    draw_engine_hours_f(0, 44);    // Счетчик моточасов (F)	
+	
+    draw_map_f(43, 0);    // ДАД (F)	
+	
+    draw_trottle_f(43, 22);    // ДПДЗ / РХХ (F)	
+	
+    draw_water_temp_f(43, 44);    // Температура ОЖ (F)	
+	
+    draw_O2_sensor_f(86, 0);    // Напряжение УДК / AFR (F)	
+	
+    draw_inj_duty_f(86, 22);    // Загрузка форсунок (F)	
+	
+    draw_air_map_index_f(86, 44);    // Номер расхода воздуха (F)	
+
+	// ========================== Блоки данных ==========================
+
+	// Линии разметки
+	u8g2.drawHLine(0, 21, 128);
+	u8g2.drawHLine(0, 43, 128);
+	u8g2.drawVLine(42, 0, 64);
+	u8g2.drawVLine(85, 0, 64);
+
+	// Рамка при появлении ошибок CE
+	if (StatusCE > 0 && AlarmBoxState > 0) {
+		u8g2.drawFrame(0, 0, 128, 64);
+		StatusCE = 0;
+	}
+
+	// Блок параметра яркости
+	draw_bright();
+
+	// Отсылаем данные на дисплей
+	u8g2.sendBuffer();
+}
+
+// Экран замера разгона
+void lcd_acceleration() { // 29
+	int RPM = 0;
+	byte BoxHeight = 0;
+	float SPD = 0.0;
+	float PrevSPD = 0.0;
+	unsigned int A30 = 0;
+	unsigned int A60 = 0;
+	unsigned int A100 = 0;
+	unsigned long Timer = millis();
+	byte L = 0;
+	char CharVal[6];
+
+	// Состояния: 0 - не готов к замеру,
+	//						1 - готов к замеру,
+	//						2 - идет замер,
+	//						3 - замер завершен,
+	//						4 - замер не удался.
+	byte Mode = 0;
+
+	while (LCDMode == 2) {
+		loop_2();
+		if (DataOk) {
+			SPD = build_speed(27 + DataShift);
+			//if (Mode == 2) {SPD = min(SPD + 0.001, 120);}
+			// Запуск измерения при скрости 0 в течение 2 сек.
+			if (Mode == 0) {
+				if (SPD > 0) {
+					Timer = millis();
+				}
+				if (millis() - Timer >= 2000) {
+					Mode = 1;
+				}
+			}
+			if (Mode == 1) {
+				if (SPD > 0) {
+					Mode = 2;
+					Timer = millis();
+				}
+			}
+
+			if (Mode == 2) {
+				if (millis() - Timer >= 65535) {
+					Mode = 4;
+				}
+				else if (SPD >= 30 && PrevSPD < 30) {
+					A30 = millis() - Timer;
+				}
+				else if (SPD >= 60 && PrevSPD < 60) {
+					A60 = millis() - Timer;
+				}
+				else if (SPD >= 100 && PrevSPD < 100) {
+					A100 = millis() - Timer;
+					Mode = 3;
+				}
+			}
+
+			if (millis() - LCDTimer >= LCD_ACC_UPDATE_DELAY) {
+				LCDTimer = millis();
+
+				AlarmBoxState += 1;
+				if (AlarmBoxState > ALARM_BOX_TIMER) {AlarmBoxState = 1 - ALARM_BOX_TIMER;}
+
+				// Очищаем память дисплея
+				u8g2.clearBuffer();
+
+				if (Mode == 0) {
+					u8g2.drawXBMP(9, 26, STOP_width, STOP_height, STOP_bits);
+				}
+				else if (Mode == 1) {
+					u8g2.drawXBMP(4, 26, READY_width, READY_height, READY_bits);
+				}
+				else if (Mode == 4) {
+					u8g2.drawXBMP(9, 26, FAIL_width, FAIL_height, FAIL_bits);
+				}
+				else if (Mode == 2 || Mode == 3) {
+					if (A30 > 0) {
+						u8g2.setFont(u8g2_font_helvB08_tn);
+						u8g2.setCursor(1, 11 + u8g2.getAscent() / 2);
+						u8g2.print(F("30"));
+
+						u8g2.setFont(u8g2_font_helvB10_tn);
+						dtostrf(A30 / 1000.0, 5, 2, CharVal);
+						L = u8g2.getUTF8Width(CharVal);
+						u8g2.drawUTF8(61 - L, 11 + u8g2.getAscent() / 2, CharVal);
+					}
+					if (A60 > 0) {
+						u8g2.setFont(u8g2_font_helvB08_tn);
+						u8g2.setCursor(1, 33 + u8g2.getAscent() / 2);
+						u8g2.print(F("60"));
+
+						u8g2.setFont(u8g2_font_helvB10_tn);
+						dtostrf(A60 / 1000.0, 5, 2, CharVal);
+						L = u8g2.getUTF8Width(CharVal);
+						u8g2.drawUTF8(61 - L, 33 + u8g2.getAscent() / 2, CharVal);
+					}
+					if (A100 > 0) {
+						u8g2.setFont(u8g2_font_helvB08_tn);
+						u8g2.setCursor(1, 55 + u8g2.getAscent() / 2);
+						u8g2.print(F("100"));
+
+						u8g2.setFont(u8g2_font_helvB10_tn);
+						dtostrf(A100 / 1000.0, 5, 2, CharVal);
+						L = u8g2.getUTF8Width(CharVal);
+						u8g2.drawUTF8(61 - L, 55 + u8g2.getAscent() / 2, CharVal);
+					}
+				}
+
+				// ========================== Блоки данных ==========================
+			    draw_speed_f(86, 0);    // Скорость (F)	
+				
+			    draw_map_f(86, 22);    // ДАД (F)	
+				
+			    draw_water_temp_f(86, 44);    // Температура ОЖ (F)	
+				// ========================== Блоки данных ==========================
+
+				// Линии разметки
+				u8g2.drawHLine(86, 21, 42);
+				u8g2.drawHLine(86, 43, 42);
+				u8g2.drawVLine(85, 0, 64);
+
+				// Тахометр
+				u8g2.setFont(u8g2_font_haxrcorp4089_tn);
+				u8g2.drawHLine(73, 2, 3); // 7000
+
+				u8g2.setCursor(77, 11);
+				u8g2.print(F("6"));
+				u8g2.drawHLine(73, 12, 9); // 6000
+				u8g2.drawHLine(73, 22, 3); // 5000
+
+				u8g2.setCursor(77, 31);
+				u8g2.print(F("4"));
+				u8g2.drawHLine(73, 32, 9); // 4000
+				u8g2.drawHLine(73, 42, 3); // 3000
+
+				u8g2.setCursor(77, 51);
+				u8g2.print(F("2"));
+				u8g2.drawHLine(73, 52, 9); // 2000
+				u8g2.drawHLine(73, 61, 3); // 1000
+
+				u8g2.drawFrame(66, 0, 7, 64);
+
+				RPM = build_int(1);
+				//RPM = 1003;
+				if (RPM > 900) {
+					RPM = constrain(RPM, 900, 7100);
+					BoxHeight = map(RPM, 900, 7100, 62, 1);
+					u8g2.drawBox(67, BoxHeight, 5, 63 - BoxHeight);
+				}
+
+				// Блок параметра яркости
+				draw_bright();
+
+				// Отсылаем данные на дисплей
+				u8g2.sendBuffer();
+
+				#ifdef TM1637_ENABLE
+					draw_tm1637();
+				#endif
+			}
+			PrevSPD = SPD;
+		}
+	}
+}
+
+// Экран ошибок CE
+void lcd_ce_errors() { // 36
+	byte BitsCount = 16;
+	if (DataSize >= 74) {BitsCount = 21;}
+
+	#define ROWS_ON_SCREEN 4
+	#define ROW_SPACE 5
+	byte StartRow = 0;
+	byte Row = 0;
+	byte OverRow = 0;
+	//uint32_t CE = 0;
+	char CharVal[4];
+	char CEItemChar[25];
+	byte H;
+	byte L;
+
+	while (LCDMode == 3) {
+		loop_2();
+
+		// Перелистывание ошибок
+		if (ButtonState[0] == 32) {
+			StartRow = max(0, StartRow - 1);
+			ButtonState[0] = 128;
+		}
+		if (ButtonState[1] == 32) {
+			if (OverRow > 0) {
+				StartRow += 1;
+			}
+			ButtonState[1] = 128;
+		}
+
+		if (millis() - LCDTimer >= LCD_UPDATE_DELAY) {
+			LCDTimer = millis();
+		
+			// Очищаем память дисплея
+			u8g2.clearBuffer();
+
+			//u8g2.setFont(u8g2_font_lucasfont_alternate_tr);
+			//u8g2.setFont(u8g2_font_haxrcorp4089_tr);
+			//u8g2.setFont(u8g2_font_mozart_nbp_tr);
+			u8g2.setFont(u8g2_font_helvB08_tr);
+			
+			H = u8g2.getAscent() + ROW_SPACE;
+
+ 			Row = 1;
+			for (byte i = StartRow; i < BitsCount; i++ ) {
+				if (CountCE[i] > 0) {
+					dtostrf(CountCE[i], 3, 0, CharVal);
+					L = u8g2.getUTF8Width(CharVal);
+					// Выковыриваем строку текста из программной памяти
+					strcpy_P(CEItemChar, (char*)pgm_read_word(&(CEItemsArray[i])));
+					u8g2.drawUTF8(1, (Row - 1) * H + H + 1, CEItemChar);
+					u8g2.drawUTF8(125 - L, (Row - 1) * H + H + 1, CharVal);
+					Row += 1;
+
+					// Если ошибок больше чем строк на экране
+					if (Row > ROWS_ON_SCREEN && i + 1 < BitsCount) {
+						OverRow = i + 1;
+						u8g2.drawXBMP(56 - 5, 64 - 8, Next_width, Next_height, Next_bits);
+						break;
+					}
+					OverRow = 0;
+				}
+			}
+			if (Row > 1 && StartRow > 0) {
+				u8g2.drawXBMP(72 - 5, 64 - 8, Prev_width, Prev_height, Prev_bits);
+			}
+
+			// Если нет ни одной ошибки
+			if (Row == 1) {
+				u8g2.setCursor(38, 32 + 3);
+				u8g2.print(F("NO ERRORS"));
+			}
+
+			// Отсылаем данные на дисплей
+			u8g2.sendBuffer();
+
+			#ifdef TM1637_ENABLE
+				draw_tm1637();
+			#endif
+		}
+	}
+}
+
+//=============================================================================
 //=================== Функциия отрисовки блоков данных ========================
 //=============================================================================
 
@@ -157,12 +678,10 @@ void draw_ff_fc_f(byte x, byte y) { // 22
 	FF_FRQ = (float) FF_FRQ * 0.225; // (3600 / 16000)
 	FF_FRQ = constrain(FF_FRQ, 0, 99.9);
 
-	// Режим отображения
+	// Режим отображения, 1 - л/ч, 2 - л/100км
 	byte Mode = 1;
 
-	// Мгновенный расход л/100км
 	if (SPD > 3 && TPS > 3) {
-		// Режим отображения №2 - движение 
 		Mode = 2; // Drive
 	}
   
@@ -170,19 +689,17 @@ void draw_ff_fc_f(byte x, byte y) { // 22
 	byte H;
 	byte L;
 
-	u8g2.setFont(u8g2_font_haxrcorp4089_tr);
-	H = u8g2.getAscent();
-	u8g2.drawUTF8(x + 2, y + H + 2, "F");
 
+	u8g2.drawXBMP(x + 2, y + 2, LETTER_F_width, LETTER_F_height, LETTER_F_bits);
 	if (Mode == 1) {
 		dtostrf(FF_FRQ, 4, 1, CharVal);
-		u8g2.drawUTF8(x + 2, y + H * 2 + 4, "F");
+		u8g2.drawXBMP(x + 2, y + 11, LETTER_F_width, LETTER_F_height, LETTER_F_bits);
 	}
 	else if (Mode == 2) {
 		FF_FRQ = (FF_FRQ * 100.0) / SPD;
 		FF_FRQ = constrain(FF_FRQ, 0, 99.9);
 		dtostrf(FF_FRQ, 4, 1, CharVal);
-		u8g2.drawUTF8(x + 2, y + H * 2 + 4, "C");
+		u8g2.drawXBMP(x + 2, y + 11, LETTER_C_width, LETTER_C_height, LETTER_C_bits);
 	}
 
 	u8g2.setFont(u8g2_font_helvB12_tn);
@@ -881,531 +1398,6 @@ void draw_tm1637() { // 3
 #endif
 
 //=============================================================================
-//===================== Функциия отрисовки экранов ============================
-//=============================================================================
-// Экран приветствия
-void draw_init() { // 20
-	#define STEP_DELAY_TM1637 100
-	#define STEP_DELAY_LCD 35
-	
-	//ШИМ подсветка приборной панели на минимум
-	#ifdef PWM_BRIGHT_PIN
-		analogWrite(PWM_BRIGHT_PIN, PWM_BRIGHT_MIN);
-	#endif
-	
-	// Очищаем LCD дисплей
-	u8g2.clear();
-	#ifdef LCD_BRIGHT_PIN
-		analogWrite(LCD_BRIGHT_PIN, LCD_BRIGHT_MIN);
-	#else
-		u8g2.setContrast(0);
-	#endif
-
-
-	#ifdef TM1637_ENABLE
-		Display7S.setBrightness(0, false);
-		Display7S.clear();
-		// Таймер для TM1637 дисплея
-		unsigned long InitSegmentTimer = millis();
-		byte TM1637BrightBuffer = 0;
-		byte Data[4];
-		byte Segment[] = {0b00000001,
-							0b00000011,
-							0b00000111,
-							0b00001111,
-							0b00011110,
-							0b00111100,
-							0b00111001,
-							0b00110001,
-							0b00100001,
-							0b00000001,
-							0b00000000};
-	#endif
-
-	// Таймер для LCD дисплея
-	unsigned long InitLCDTimer = millis();
-	// Шаг изменения подсветки экрана
-	byte BrightStepLCD = (BrightLCD[BrightMode] - LCD_BRIGHT_MIN) / 31;
-	// Шаг изменения подсветки приборной панели
-	byte BrightStepPWM = (BrightPWM[BrightMode] - PWM_BRIGHT_MIN) / 31;
-
-	byte State = 0;
-	byte i = 0;
-	byte j = 0;
-
-	while (1) {
-		if (millis() - InitLCDTimer >= STEP_DELAY_LCD) {
-			if (j < 32) {
-
-				#ifdef PWM_BRIGHT_PIN
-					analogWrite(PWM_BRIGHT_PIN, PWM_BRIGHT_MIN + j * BrightStepPWM);
-				#endif
-				
-				#ifdef LCD_BRIGHT_PIN
-					analogWrite(LCD_BRIGHT_PIN, LCD_BRIGHT_MIN + j * BrightStepLCD);
-				#else
-					u8g2.setContrast(j * BrightStepLCD);
-				#endif
-
-				u8g2.clearBuffer();
-				u8g2.setClipWindow(0, 31 - j, 127, 32 + j);
-				// Заставка
-				u8g2.drawXBMP(23, 0, Trollface_width, Trollface_height, Trollface_bits);
-				u8g2.sendBuffer();
-				j++;
-			}
-			#ifndef TM1637_ENABLE
-				else {
-					break;
-				}
-			#endif
-			InitLCDTimer = millis();
-		}
-		#ifdef TM1637_ENABLE
-			if (millis() - InitSegmentTimer >= STEP_DELAY_TM1637) {
-				TM1637BrightBuffer = min(TM1637Bright, TM1637BrightBuffer += 4);
-				byte Buffer = TM1637BrightBuffer / TM1637_BRIGHT_STEP;
-				Display7S.setBrightness(Buffer);
-				if (State == 0) {
-					for (byte k = 0; k < 4; k++) {
-						Data[k] = Segment[i];
-					}
-					Display7S.setSegments(Data);
-					i++;
-					if (i >= 10) {
-						State = 1;
-						i = 0;
-					}
-				}
-				else if (State == 1) {
-					Data[i] = 0b00000000;
-					Display7S.setSegments(Data);
-					i++;
-					if (i >= 3) {
-						State = 2;
-						i = 0;
-					}
-				}
-				else if (State == 2) {
-					Data[3] = Data[3] << 1;
-					Data[3] += 1;
-					Display7S.setSegments(Data);
-					i++;
-					if (i >= 5) {
-						byte Buffer = TM1637Bright / TM1637_BRIGHT_STEP;
-						Display7S.setBrightness(Buffer);
-						break;
-					}
-				}
-				InitSegmentTimer = millis();
-			}
-		#endif
-	}
-	#ifdef LCD_BRIGHT_PIN
-		analogWrite(LCD_BRIGHT_PIN, BrightLCD[BrightMode]);
-	#else
-		u8g2.setContrast(BrightLCD[BrightMode]);
-	#endif
-	#ifdef PWM_BRIGHT_PIN
-		analogWrite(PWM_BRIGHT_PIN, BrightPWM[BrightMode]);
-	#endif
-				
-	lcd_main();
-}
-
-void draw_finish() {
-	#define ROW_SPACE 7
-	#define ROW_SHIFT 5
-	//RideTimer = 600001;
-	//DIST = 12.15;
-	//FuelBurnedRide = 2.2;
-
-	char CharVal[6];
-	byte Row;
-	byte H;
-	byte L;
-	u8g2.setFont(u8g2_font_helvB08_tr);
-	H = u8g2.getAscent();
-
-	u8g2.clearBuffer();
-	// Строка 1 - Время поездки в минутах
-	Row = 1;
-	float TimeM = (float) RideTimer / 60000;
-	dtostrf(TimeM, 4, 0, CharVal);
-	L = u8g2.getUTF8Width(CharVal);
-	u8g2.setCursor(1, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT);
-	u8g2.print(F("Travel Time"));
-	u8g2.drawUTF8(120 - L, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT, CharVal);
-
-	// Строка 2 - Пройденное расстояние
-	Row = 2;
-	dtostrf(DIST, 5, 1, CharVal);
-	L = u8g2.getUTF8Width(CharVal);
-	u8g2.setCursor(1, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT);
-	u8g2.print(F("Distance Traveled"));
-	u8g2.drawUTF8(120 - L, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT, CharVal);
-
-	// Строка 3 - Израсходовано топлива
-	Row = 3;
-	dtostrf(FuelBurnedRide, 5, 1, CharVal);
-	L = u8g2.getUTF8Width(CharVal);
-	u8g2.setCursor(1, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT);
-	u8g2.print(F("Fuel Consumed"));
-	u8g2.drawUTF8(120 - L, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT, CharVal);
-
-	// Строка 4 - Средняя скорость
-	Row = 4;
-	float AVGSpeed = (float) DIST * (60 / TimeM);
-	dtostrf(AVGSpeed, 5, 1, CharVal);
-	L = u8g2.getUTF8Width(CharVal);
-	u8g2.setCursor(1, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT);
-	u8g2.print(F("Average Speed"));
-	u8g2.drawUTF8(120 - L, (Row - 1) * (H + ROW_SPACE) + H + ROW_SHIFT, CharVal);
-
-	u8g2.sendBuffer();
-}
-
-// Основной экран
-void lcd_main() { // 0
-	// Очищаем память дисплея
-	u8g2.clearBuffer();
-
-	// ========================== Блоки данных ==========================
-    draw_ff_fc_f(0, 0);    // Мгновенный расход топлива (F)	
-	
-    draw_water_temp_f(0, 22);    // Температура ОЖ (F)	
-	
-    draw_distance_f(0, 44);    // Суточный и общий пробег (F)	
-	
-    draw_map_f(43, 0);    // ДАД (F)	
-	
-    draw_trottle_f(43, 22);    // ДПДЗ / РХХ (F)	
-	
-    draw_afc_f(43, 44);    // Средний расход топлива суточный и общий (F)	
-	
-    draw_O2_sensor_h(86, 0);    // Напряжение УДК / AFR (H)	
-    draw_lambda_corr_h(86, 10);    // Лямбда коррекция (H)	
-    draw_airtemp_h(86, 22);    // Температура воздуха на впуске (H)	
-    draw_battery_h(86, 32);    // Напряжение сети (H)	
-    draw_fuel_burned_f(86, 44);    // Израсходованное топливо (F)	
-	// ========================== Блоки данных ==========================
-
-
-	// Линии разметки
-	u8g2.drawHLine(0, 21, 128);
-	u8g2.drawHLine(0, 43, 128);
-	u8g2.drawVLine(42, 0, 64);
-	u8g2.drawVLine(85, 0, 64);
-
-	// Рамка при появлении ошибок CE
-	if (StatusCE > 0 && AlarmBoxState > 0) {
-		u8g2.drawFrame(0, 0, 128, 64);
-		StatusCE = 0;
-	}
-	
-	// Блок параметра яркости
-	draw_bright();
-
-	// Отсылаем данные на дисплей
-	u8g2.sendBuffer();
-}
-
-// Второй экран
-void lcd_second() { // 0 
-	// Очищаем память дисплея
-	u8g2.clearBuffer();
-
-	// ========================== Блоки данных ==========================
-    draw_rpm_f(0, 0);    // Обороты (F)	
-	
-    draw_speed_f(0, 22);    // Скорость (F)	
-	
-    draw_engine_hours_f(0, 44);    // Счетчик моточасов (F)	
-	
-    draw_map_f(43, 0);    // ДАД (F)	
-	
-    draw_trottle_f(43, 22);    // ДПДЗ / РХХ (F)	
-	
-    draw_water_temp_f(43, 44);    // Температура ОЖ (F)	
-	
-    draw_O2_sensor_f(86, 0);    // Напряжение УДК / AFR (F)	
-	
-    draw_inj_duty_f(86, 22);    // Загрузка форсунок (F)	
-	
-    draw_air_map_index_f(86, 44);    // Номер расхода воздуха (F)	
-
-	// ========================== Блоки данных ==========================
-
-	// Линии разметки
-	u8g2.drawHLine(0, 21, 128);
-	u8g2.drawHLine(0, 43, 128);
-	u8g2.drawVLine(42, 0, 64);
-	u8g2.drawVLine(85, 0, 64);
-
-	// Рамка при появлении ошибок CE
-	if (StatusCE > 0 && AlarmBoxState > 0) {
-		u8g2.drawFrame(0, 0, 128, 64);
-		StatusCE = 0;
-	}
-
-	// Блок параметра яркости
-	draw_bright();
-
-	// Отсылаем данные на дисплей
-	u8g2.sendBuffer();
-}
-
-// Экран замера разгона
-void lcd_acceleration() { // 29
-	int RPM = 0;
-	byte BoxHeight = 0;
-	float SPD = 0.0;
-	float PrevSPD = 0.0;
-	unsigned int A30 = 0;
-	unsigned int A60 = 0;
-	unsigned int A100 = 0;
-	unsigned long Timer = millis();
-	byte L = 0;
-	char CharVal[6];
-
-	// Состояния: 0 - не готов к замеру,
-	//						1 - готов к замеру,
-	//						2 - идет замер,
-	//						3 - замер завершен,
-	//						4 - замер не удался.
-	byte Mode = 0;
-
-	while (LCDMode == 2) {
-		loop_2();
-		if (DataOk) {
-			SPD = build_speed(27 + DataShift);
-			//if (Mode == 2) {SPD = min(SPD + 0.001, 120);}
-			// Запуск измерения при скрости 0 в течение 2 сек.
-			if (Mode == 0) {
-				if (SPD > 0) {
-					Timer = millis();
-				}
-				if (millis() - Timer >= 2000) {
-					Mode = 1;
-				}
-			}
-			if (Mode == 1) {
-				if (SPD > 0) {
-					Mode = 2;
-					Timer = millis();
-				}
-			}
-
-			if (Mode == 2) {
-				if (millis() - Timer >= 65535) {
-					Mode = 4;
-				}
-				else if (SPD >= 30 && PrevSPD < 30) {
-					A30 = millis() - Timer;
-				}
-				else if (SPD >= 60 && PrevSPD < 60) {
-					A60 = millis() - Timer;
-				}
-				else if (SPD >= 100 && PrevSPD < 100) {
-					A100 = millis() - Timer;
-					Mode = 3;
-				}
-			}
-
-			if (millis() - LCDTimer >= LCD_ACC_UPDATE_DELAY) {
-				LCDTimer = millis();
-
-				AlarmBoxState += 1;
-				if (AlarmBoxState > ALARM_BOX_TIMER) {AlarmBoxState = 1 - ALARM_BOX_TIMER;}
-
-				// Очищаем память дисплея
-				u8g2.clearBuffer();
-
-				u8g2.setFont(u8g2_font_courB14_tr);
-				if (Mode == 0) {
-					u8g2.setCursor(9, 32 + u8g2.getAscent() / 2);
-					u8g2.print(F("STOP"));
-				}
-				else if (Mode == 1) {
-					u8g2.setCursor(5, 32 + u8g2.getAscent() / 2);
-					u8g2.print(F("READY"));
-				}
-				else if (Mode == 4) {
-					u8g2.setCursor(4, 32 + u8g2.getAscent() / 2);
-					u8g2.print(F("FAIL!"));
-				}
-				else if (Mode == 2 || Mode == 3) {
-					if (A30 > 0) {
-						u8g2.setFont(u8g2_font_helvB08_tn);
-						u8g2.setCursor(1, 11 + u8g2.getAscent() / 2);
-						u8g2.print(F("30"));
-
-						u8g2.setFont(u8g2_font_helvB10_tn);
-						dtostrf(A30 / 1000.0, 5, 2, CharVal);
-						L = u8g2.getUTF8Width(CharVal);
-						u8g2.drawUTF8(61 - L, 11 + u8g2.getAscent() / 2, CharVal);
-					}
-					if (A60 > 0) {
-						u8g2.setFont(u8g2_font_helvB08_tn);
-						u8g2.setCursor(1, 33 + u8g2.getAscent() / 2);
-						u8g2.print(F("60"));
-
-						u8g2.setFont(u8g2_font_helvB10_tn);
-						dtostrf(A60 / 1000.0, 5, 2, CharVal);
-						L = u8g2.getUTF8Width(CharVal);
-						u8g2.drawUTF8(61 - L, 33 + u8g2.getAscent() / 2, CharVal);
-					}
-					if (A100 > 0) {
-						u8g2.setFont(u8g2_font_helvB08_tn);
-						u8g2.setCursor(1, 55 + u8g2.getAscent() / 2);
-						u8g2.print(F("100"));
-
-						u8g2.setFont(u8g2_font_helvB10_tn);
-						dtostrf(A100 / 1000.0, 5, 2, CharVal);
-						L = u8g2.getUTF8Width(CharVal);
-						u8g2.drawUTF8(61 - L, 55 + u8g2.getAscent() / 2, CharVal);
-					}
-				}
-
-				// ========================== Блоки данных ==========================
-			    draw_speed_f(86, 0);    // Скорость (F)	
-				
-			    draw_map_f(86, 22);    // ДАД (F)	
-				
-			    draw_water_temp_f(86, 44);    // Температура ОЖ (F)	
-				// ========================== Блоки данных ==========================
-
-				// Линии разметки
-				u8g2.drawHLine(86, 21, 42);
-				u8g2.drawHLine(86, 43, 42);
-				u8g2.drawVLine(85, 0, 64);
-
-				// Тахометр
-				u8g2.setFont(u8g2_font_haxrcorp4089_tn);
-				u8g2.drawHLine(73, 2, 3); // 7000
-
-				u8g2.setCursor(77, 11);
-				u8g2.print(F("6"));
-				u8g2.drawHLine(73, 12, 9); // 6000
-				u8g2.drawHLine(73, 22, 3); // 5000
-
-				u8g2.setCursor(77, 31);
-				u8g2.print(F("4"));
-				u8g2.drawHLine(73, 32, 9); // 4000
-				u8g2.drawHLine(73, 42, 3); // 3000
-
-				u8g2.setCursor(77, 51);
-				u8g2.print(F("2"));
-				u8g2.drawHLine(73, 52, 9); // 2000
-				u8g2.drawHLine(73, 61, 3); // 1000
-
-				u8g2.drawFrame(66, 0, 7, 64);
-
-				RPM = build_int(1);
-				//RPM = 1003;
-				if (RPM > 900) {
-					RPM = constrain(RPM, 900, 7100);
-					BoxHeight = map(RPM, 900, 7100, 62, 1);
-					u8g2.drawBox(67, BoxHeight, 5, 63 - BoxHeight);
-				}
-
-				// Блок параметра яркости
-				draw_bright();
-
-				// Отсылаем данные на дисплей
-				u8g2.sendBuffer();
-
-				#ifdef TM1637_ENABLE
-					draw_tm1637();
-				#endif
-			}
-			PrevSPD = SPD;
-		}
-	}
-}
-
-// Экран ошибок CE
-void lcd_ce_errors() { // 36
-	byte BitsCount = 16;
-	if (DataSize >= 74) {BitsCount = 21;}
-
-	#define ROWS_ON_SCREEN 5
-	byte StartRow = 0;
-	byte Row = 0;
-	byte OverRow = 0;
-	//uint32_t CE = 0;
-	char CharVal[4];
-	char CEItemChar[25];
-	byte H;
-	byte L;
-
-	while (LCDMode == 3) {
-		loop_2();
-
-		// Перелистывание ошибок
-		if (ButtonState[0] == 32) {
-			StartRow = max(0, StartRow - 1);
-			ButtonState[0] = 128;
-		}
-		if (ButtonState[1] == 32) {
-			if (OverRow > 0) {
-				StartRow += 1;
-			}
-			ButtonState[1] = 128;
-		}
-
-		if (millis() - LCDTimer >= LCD_UPDATE_DELAY) {
-			LCDTimer = millis();
-		
-			// Очищаем память дисплея
-			u8g2.clearBuffer();
-
-			//u8g2.setFont(u8g2_font_lucasfont_alternate_tr);
-			u8g2.setFont(u8g2_font_haxrcorp4089_tr);
-			//u8g2.setFont(u8g2_font_mozart_nbp_tr);
-			H = u8g2.getAscent();
-
- 			Row = 1;
-			for (byte i = StartRow; i < BitsCount; i++ ) {
-				if (CountCE[i] > 0) {
-					dtostrf(CountCE[i], 3, 0, CharVal);
-					L = u8g2.getUTF8Width(CharVal);
-					// Выковыриваем строку текста из программной памяти
-					strcpy_P(CEItemChar, (char*)pgm_read_word(&(CEItemsArray[i])));
-					u8g2.drawUTF8(1, (Row - 1) * (H + 4) + H + 1, CEItemChar);
-					u8g2.drawUTF8(125 - L, (Row - 1) * (H + 4) + H + 1, CharVal);
-					Row += 1;
-
-					// Если ошибок больше чем строк на экране
-					if (Row > ROWS_ON_SCREEN && i + 1 < BitsCount) {
-						OverRow = i + 1;
-						u8g2.drawXBMP(56 - 5, 64 - 8, Next_width, Next_height, Next_bits);
-						break;
-					}
-					OverRow = 0;
-				}
-			}
-			if (Row > 1 && StartRow > 0) {
-				u8g2.drawXBMP(72 - 5, 64 - 8, Prev_width, Prev_height, Prev_bits);
-			}
-
-			// Если нет ни одной ошибки
-			if (Row == 1) {
-				u8g2.setCursor(38, 32 + 3);
-				u8g2.print(F("NO ERRORS"));
-			}
-
-			// Отсылаем данные на дисплей
-			u8g2.sendBuffer();
-
-			#ifdef TM1637_ENABLE
-				draw_tm1637();
-			#endif
-		}
-	}
-}
-
-//=============================================================================
 //============================== Основные функции  ============================
 //=============================================================================
 
@@ -1639,20 +1631,23 @@ void build_data() { // 12
 			FF_FRQ = constrain(FF_FRQ, 0, 256);
 
 			float FFAVG = (float) (PrevFF_FRQ + FF_FRQ) * 0.1125; // Расход л/ч (3600 / 16000) / 2
-			float Fuel = (float) FFAVG * ((millis() - FuelTimer) / 3600000);
+			float FuelAdd = (float) FFAVG * ((millis() - FuelTimer) / 3600000);
 
-			FuelBurnedRide += Fuel;
-			FuelBurned += Fuel;
-			FuelBurnedAll += Fuel;
+			FuelBurnedRide += FuelAdd;
+			FuelBurned += FuelAdd;
+			FuelBurnedAll += FuelAdd;
 
 			FuelTimer = millis();
 			PrevFF_FRQ = FF_FRQ;
 		}
+
 		// Подсчет моточасов
 		if (EngineTimer == 0) {EngineTimer = millis();}
 		else if (millis() - EngineTimer >= 999) {
 			int RPM = build_int(1);
-			RPM = 501;
+			#ifdef DEBUG_MODE
+				RPM = 501;
+			#endif
 			if (RPM > 500) {
 				EngineHours += 1;
 				RideTimer += 1;
@@ -1773,6 +1768,7 @@ void encoder_update() { // 2
 }
 
 // Колокольчик AE86
+#ifdef SPEED_CHIME_PIN
 void speed_chime() { // 4
 	float SPD = 0.0;
 	SPD = build_speed(27 + DataShift);
@@ -1800,6 +1796,7 @@ void speed_chime() { // 4
 		}
 	}
 }
+#endif
 
 // Прерывание на включение замка зажигания
 void power_on() {
@@ -1832,11 +1829,6 @@ void power_off() {
 	write_eeprom();
 	LCDMode = 0;
 
-	#ifdef TM1637_ENABLE
-		Display7S.setBrightness(0, false);
-		Display7S.clear();
-	#endif
-
 	// Экран завершения
 	draw_finish();
 	delay(FINISH_SCREEN_TIME * 1000);
@@ -1846,7 +1838,10 @@ void power_off() {
 	// Шаг изменения подсветки приборной панели
 	byte BrightStepPWM = (BrightPWM[BrightMode] - PWM_BRIGHT_MIN) / 31;
 
-	byte Bright = 0;
+	#ifdef TM1637_ENABLE
+		byte BrightStepTM1637 = TM1637Bright / 31;
+	#endif
+
 	for (byte i = 1; i < 32; i++) {
 		#ifdef PWM_BRIGHT_PIN
 			if (BrightPWM[2]) {BrightPWM[2] -= BrightStepPWM;}
@@ -1860,12 +1855,19 @@ void power_off() {
 			u8g2.setContrast(BrightLCD[2]);
 		#endif
 
+		#ifdef TM1637_ENABLE
+			if (TM1637Bright) {TM1637Bright -= BrightStepTM1637;}
+			byte Buffer = TM1637Bright / TM1637_BRIGHT_STEP;
+			Serial.println(Buffer);
+			Display7S.setBrightness(1);
+		#endif
+
 		u8g2.clearBuffer();
 		u8g2.setClipWindow(0, i, 127, 63 - i);
 		// Заставка
 		draw_finish();
 		u8g2.sendBuffer();
-		delay(15);
+		delay(20);
 	}
 	#ifdef PWM_BRIGHT_PIN
 		analogWrite(PWM_BRIGHT_PIN, 0);
@@ -1879,8 +1881,13 @@ void power_off() {
 	// Очищаем LCD дисплей
 	u8g2.clear();
 
+	#ifdef TM1637_ENABLE
+		Display7S.setBrightness(0, false);
+		Display7S.clear();
+	#endif
+
 	while (!digitalRead(INT_POWER_PIN)) {
-		delay(100);
+		delay(250);
 	}
 }
 
@@ -1905,10 +1912,10 @@ void lcd_bright_change() {
 	// Подсветка дисплея
 	if (BrightLCD[BrightMode] != BrightLCD[2]) {
 		if (BrightLCD[BrightMode] < BrightLCD[2]) {
-			BrightLCD[2] -= 1;
+			BrightLCD[2] -= 2;
 		}
 		else if (BrightLCD[BrightMode] > BrightLCD[2]) {
-			BrightLCD[2] += 1;
+			BrightLCD[2] += 2;
 		}
 		#ifdef LCD_BRIGHT_PIN
 			analogWrite(LCD_BRIGHT_PIN, BrightLCD[2]);
@@ -1936,13 +1943,11 @@ void lcd_bright_change() {
 		if (Buffer != TM1637Bright) {
 			if (Buffer > TM1637Bright) {
 				TM1637Bright++;
-				byte Buffer = TM1637Bright / TM1637_BRIGHT_STEP;
-				Display7S.setBrightness(Buffer);
+				Display7S.setBrightness(TM1637Bright / TM1637_BRIGHT_STEP);
 			}
 			else if (Buffer < TM1637Bright) {
 				TM1637Bright--;
-				byte Buffer = TM1637Bright / TM1637_BRIGHT_STEP;
-				Display7S.setBrightness(Buffer);
+				Display7S.setBrightness(TM1637Bright / TM1637_BRIGHT_STEP);
 			}
 		}
 	#endif
@@ -2006,8 +2011,10 @@ void setup() { // 0
 	read_eeprom();
 	
 	// Пин управления колокольчиком
-	pinMode(SPEED_CHIME_PIN, OUTPUT);
-	digitalWrite(SPEED_CHIME_PIN, LOW);
+	#ifdef SPEED_CHIME_PIN
+		pinMode(SPEED_CHIME_PIN, OUTPUT);
+		digitalWrite(SPEED_CHIME_PIN, LOW);
+	#endif
 
 	Serial.begin(SERIAL_PORT_SPEED);
 
@@ -2045,7 +2052,7 @@ void loop_2() { // 0
 	// Проверка состояния габаритов и замка зажигания
 	power_n_light_status();
 	// Плавное изменение яркости
-	if (millis() - BrightTimer >= 10) {
+	if (millis() - BrightTimer >= 20) {
 		lcd_bright_change();
 		BrightTimer = millis();
 	}
@@ -2168,7 +2175,9 @@ void loop() { // 0
 	// Обновлять дисплей только при наличии данных
 	if (DataOk && PowerState) {
 
-		speed_chime(); // 4
+		#ifdef SPEED_CHIME_PIN
+			speed_chime(); // 4
+		#endif
 
 		if (millis() - LCDTimer >= LCD_UPDATE_DELAY) {
 			LCDTimer = millis();
