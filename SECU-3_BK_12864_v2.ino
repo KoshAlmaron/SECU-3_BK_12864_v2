@@ -562,8 +562,23 @@ void lcd_ce_errors() { // 36
 	byte L = 0;
 
 	while (1) {
-		button_update(0, BUTTON_UP_PIN);
-		button_update(1, BUTTON_DOWN_PIN);
+		// Обновление состояние кнопок
+		#ifndef ENCODER_CONTROL
+			button_update(0, BUTTON_UP_PIN);
+			button_update(1, BUTTON_DOWN_PIN);
+		#else
+			encoder_update();
+			// Энкодер является заменителем кнопок вверх/вниз. 
+			if (EncoderState == 4) {
+				ButtonState[0] = 32;
+				EncoderState = 0;
+			}
+			else if (EncoderState == -4) {
+				ButtonState[1] = 32;
+				EncoderState = 0;
+			}
+		#endif
+
 		// Перелистывание ошибок
 		if (ButtonState[0] == 32) {StartRow = max(0, StartRow - 1);}
 		if (ButtonState[1] == 32) {if (OverRow > 0) {StartRow += 1;}}
@@ -2512,14 +2527,13 @@ void lcd_bright_change() {
 void button_action() {
 	// Обновление состояние кнопок
 	#ifndef ENCODER_CONTROL
+		button_update(0, BUTTON_UP_PIN);
+		button_update(1, BUTTON_DOWN_PIN);
 		button_update(2, BUTTON_LEFT_PIN);
-	#endif
-	button_update(0, BUTTON_UP_PIN);
-	button_update(1, BUTTON_DOWN_PIN);
-	button_update(3, BUTTON_RIGHT_PIN);
-
-	#ifdef ENCODER_CONTROL
+		button_update(3, BUTTON_RIGHT_PIN);
+	#else
 		encoder_update();
+		button_update(3, BUTTON_RIGHT_PIN);
 		// Энкодер является заменителем кнопок вверх/вниз. 
 		if (EncoderState == 4) {
 			ButtonState[0] = 32;
