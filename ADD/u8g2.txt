@@ -1,4 +1,4 @@
 Библиотеку экрана качать отсюда:
-https://github.com/olikraus/u8g2
+https://github.com/olikraus/U8g2_Arduino
 
 Файл слишком большой для размещения на форуме.

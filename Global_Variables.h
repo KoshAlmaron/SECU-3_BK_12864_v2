@@ -15,14 +15,27 @@ byte DataSize = 0;
 byte DataShift = 0;
 #define MAX_CE_BITS_COUNT 21
 
-// Яркость подсветки дисплея
-byte Bright;
+// Таймер для изменения яркости
+unsigned long BrightTimer = 0;
+
+// Состояние замка зажигания, 0 - выключено, 1 - включено
+byte PowerState = 0;
+// Режим подсветки, 0 - день, 1 - ночь
+byte BrightMode = 0;
+
+// Яркость подсветки дисплея, 0 - день, 1 - ночь, 2 - буфер для перехода
+byte BrightLCD[3];
+// Таймер для блока отображения яркости
+char BrightBoxState = 0;
 // Таймеры для дисплея
 unsigned long LCDTimer = 0;
 // Таймер для бокса инверсии 
-char BoxState = 0;
+char AlarmBoxState = 0;
 
-// В глобальных переменных только дистанция для использования в прерывании
+// ШИМ подсветка приборной панели.
+byte BrightPWM[3];
+
+// Пройденное расстояние в км
 float DIST = 0.0;       // (29-31)  Дистанция
 
 // Переменные расчета и для хранения пробега и израсходованного топлива
@@ -40,14 +53,22 @@ unsigned long EngineHours = 0;
 // Таймер для моточасов
 unsigned long EngineTimer = 0;
 
+// Переменные для экрана завершения
+// Время работы за поездку
+unsigned long RideTimer = 0;
+// Израсходованно топлива за поездку
+float FuelBurnedRide = 0.0;
+
 // Энкодер
 char EncoderState = 0;
-// Состояние кнопки (0 - не нажата, 1 - нажата, 2 - обработана)
-byte ButtonState = 0;
+// Состояние кнопок (0 - не нажата, 1 - нажата, 2 - обработана)
+byte ButtonState[4]; // Ввер/внизх, влево/вправо
 // Таймер для кнопки.
-byte ButtonTimer = 0;
+unsigned long ButtonTimer;
 // Номер активного экрана
 byte LCDMode = 0;
+// Номк экрана ошибок CE
+#define LCD_MODE_CE 3
 
 // Состояние колокольчика AE86
 byte SpeedChimeStatus = 0;
@@ -57,12 +78,15 @@ unsigned long SpeedChimeTimer = 0;
 // Наличие ошибок CE
 byte StatusCE = 0;
 // Количество ошибок
+#define CE_COUNT_MAX 21
 byte CountCE[21];
 // Предыдущее состояние
 uint32_t PrevCE;
 
 #ifdef TM1637_ENABLE
 	TM1637Display Display7S(TM1637_CLK_PIN, TM1637_DIO_PIN); // 28 байт
+	// Буфер для перехода яркость подсветки
+	byte TM1637Bright;
 #endif
 
 #ifdef DEBUG_MODE
