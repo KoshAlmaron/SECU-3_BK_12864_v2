@@ -69,7 +69,7 @@
 //#define PWM_BRIGHT_PIN 3		// Приборной панели (Опционально)
 
 // Авто управление яркостью, раскомментировать для включения (Опционально)
-#define AUTO_BRIGHT_ENABLE
+//#define AUTO_BRIGHT_ENABLE
 #define AUTO_BRIGHT_PIN A5		// Фоторезистор регулировки яркости
 
 // SPI дисплей
@@ -95,7 +95,7 @@
 #define EGT_COUNT_AVG 100
 
 // Датчик температуры DS18B20 (Опционально)
-#define TEMP_SENSOR_PIN 5
+//#define TEMP_SENSOR_PIN 5
 
 // Сегментный дисплей TM1637
 //#define TM1637_ENABLE

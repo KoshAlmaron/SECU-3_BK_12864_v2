@@ -1,149 +1,10 @@
-/*
-	2020-11-28
-	2020-12-03
-	2020-12-06
-	2020-12-07
-	2020-12-09 - Изменил размер пакета для версии 4.9
-	2020-12-11 - При ХХ отображается только РХХ, 
-					ДПДЗ отображается при положении газа более 2%.
-				- Поменял шрифты температуры ОЖ и РХХ.
-				- Добавил пороги для значений и их индикацию.
-	2021-01-05 - Добавил возможность отображения AFR вместо напряжения.
-				- Добавил пороги для напряжения.
-				- Добавил возможность выбора числа импульсов датчика 
-					скорости на 1 км.
-	2021-02-19 - Добавил экран замера разгона 0-100.
-	2021-04-25 - Изменил размер пакета для версии 4.9 от 14.04.2021
-	2021-06-20 - Добавил сигнализацию превышения скорости (колокольчик AE86). 
-	2021-07-27 - Добавил экран ошибок CE.
-	2021-09-28 - Исправил размер пакета для версии 4.8. Вынес в настройки скорость порта.
-	2021-10-03 - Добавил автоматическое переключение вывода АФР или напряжение УДК.
-				- Добавил возможность вывода оборотов на семисегментный дисплей на TM1637.
-				- Увеличил частоту обновления экрана.
-				- Добавил в настройки скорость обновления экрана.
-	2021-10-04 - Исправил баг с переполнением буфера незадействованных параметров,
-					которые имели значение "7FFF".
-				- Добавил ограничения значений для всех параметров.
-	2021-10-05 - Исправил еще один баг с переполнением буфера теперь уже для параметров, 
-					которые хранятся в EEPROM. Во-первых, неверно указал длину строки для пробега
-					и израсходованного топлива, во-вторых забыл, что на новой Ардуино в EEPROM
-					могут быть не обязательно нули.
-	==================================================================================================
-		Переход на версию 2
-	==================================================================================================
-	2021-10-06 - Разбил все показания на экране на отдельные блоки. Сделал конфигуратор экрана в Excel.
-	2021-10-07 - Отсортировал и поделил на группы переменные и функции.
-			   	- Добавил второй экран.
-			   	- Добавил блоки для отображения: 
-					* обороты (F),
-					* уровень топлива (F), 
-					* EGT (F),
-					* Давление масла (F).
-	2021-10-08 - Вынес в отдельные файлы:
-					* Название ошибок CE в CE_Errors.h,
-					* Настроки в Configuration.h,
-					* Глобальные переменные в Global_Variables.h,
-					* Пиктограммы в Pictograms.h.
-				- Наделал кучу новых багов и героически с ними сражался,
-			   	- Сделал автоопределение размера пакета от SECU,
-			   	- Добавил второй экран с данными.
-			   	- Добавил блоки для отображения:
-			   		* ДАД2, давление газа (F),
-			   		* Дифф.давление, ДАД2-ДАД (F),
-			   		* Темп. 2, температура газа (F),
-			   		* Загрузка форсунок (F).
-	2021-10-09 - Добавил блок номера расхода воздуха.
-	2021-10-11 - Добавил в настройки шаг регулировки яркости (BRIGHT_STEP),
-				- Добавил блоки для отображения:
-	 				* Напряжение сети (F),
-					* Напряжение УДК / AFR (F),
-					* Температура воздуха на впуске (F),
-					* Средний расход топлива суточный (F),
-					* Средний расход топлива общий (F).
-	2021-10-15 - Добавил анимацию включения для дисплея TM1637.
-				- Добавил возможность выбора данных для отображения для TM1637:
-					* Обороты,
-					* EGT,
-					* AFR,
-					* Загрузка форсунок,
-					* ДАД.
-	2021-10-19 - Немного оптимизировал код.
-				- Посчитал максимальный объем ОЗУ, используемый 
-					локальными переменными - 77 байт.
-	2021-10-21 - Добавил счетчик моточасов и блок для отображения.
-				- Добавил линейный тахометр на экран замера разгона.
-				- Немного поправил отрисовку некоторых блоков.
-				- Исправил баг с зависанием дисплея TM1637 при переключении экранов.
-	2021-11-04 - Добавил управление кнопками, энкодер остается как опция.
-	2021-11-05 - Добавил два режима яркости в зависимости от состояния габаритов.
-				- Добавил плавное изменение яркости.
-				- Добавил блок отображение яркости при изменении значения.
-				- Питание БК теперь постоянное с мониторингом состояния замка зажигания.
-	2021-11-06 - Добавил управление подсветкой приборной панели.
-					Яркость приборной панели регулируется на дополнительном экране.
-	2021-11-08 - Добавил экран завершения.
-	2021-11-11 - Уменьшил количество использованных шрифтов, это осовободило 2,5 КБ flash памяти.
-				- Исправил несколько ошибок в коде новых функций.
-	2021-11-21 - Добавил управление питанием, после завершения БК сам себя выключает через MOSFET.
-	2021-11-27 - Изменил расчет израсходованного топлива, теперь топливо учитывается в мл,
-					Так как расчет топлива происходил на пределе точности float.
-	2021-11-28 - Исправил расчет средней скорости на экране завершения.
-	2021-12-01 - Добавил буфер уровня топлива, настраивается с помощью FUEL_TANK_LEVEL_AVG.
-				- Экран завершения отображается только если пройдено больше 100м.
-	2021-12-03 - Исправил режим подсветки и начальные показания топлива при старте БК.
-	2021-12-10 - Исправил баг экрана и управления питания, который появлялся 
-					при быстром выключении и включении зажигания (перезапуск двигателя)
-	2021-12-14 - Добавил замер разгона 60-100.
-	2021-12-17 - Добавил большой блок лямбда коррекции.
-	2022-01-06 - Добавил коэффициент коррекции расхода топлива. 
-	2022-01-28 - Добавил автоматическую регулировку яркости подсветки.
-				- Убрал картинку на заставке из-за нехватки flash памяти.
-				- Изменил процесс загрузки БК, сначала определяется длина пакета,
-					далее принимается первый пакет, после всего этого уже идет заставка.
-					Если нет данных в течение 3-х секунд на экран выводится сообщение "NO SIGNAL".
-	2022-02-01 - Исправил несколько ошибок анимации при старте.
-				- Привязал яркость сегментного дисплея к яркости LCD.
-				- Отключил неиспользуемые выводы при автояркости и при использовании энкодера.
-	2022-02-02 - Добавил вывод для индикации низкого уровня топлива.
-	2022-02-03 - Оптимизировал код, убрал все лишнее для освобождения flash памяти.
-				- Заменил библиотеку Arduino EEPROM на avr/eeprom.h.
-	2022-02-04 - Добавил анимацию смены экранов.
-				- Добавил плавное изменение автояркости.
-	2022-02-05 - Добавил датчик температуры DS18B20.
-				- Исправил ошибку с вычислением расхода топлива в гц (переполнение int).
-	2022-02-07 - Исправил ошибку со случайным срабатыванием длинного нажатия при
-					анимиции смены экрана.
-	2022-02-25 - Изменил анимацию смены экранов.
-				- Добавил программный сброс при повторном запуске БК до отключения питания.
-	2022-02-27 - Добавил проверку контрольной суммы для пакета данных.
-	2022-06-06 - Добавил большой блок уровня ШИМ вентилятора охлаждения.
-	2022-07-22 - Исправил баг при перезапуске БК, при котором счетчик израсходованного
-					топлива сбрасывался, а пробег оставался, так как она хранится в SECU.
-	2022-10-05 - Добавил функцию проверки датчика аварийного давления масла.
-					При старте БК проверяется исправность цепи, далее контролируется состояние.
-	2022-11-21 - Увеличил максимальный размер пакета с 90 до 100 байт для версии SECU 5.0.
-	2023-02-17 - Добавил возможность подключения датчика EGT напрямую к БК, если на SECU
-					закончились выводы. Датчик EGT - термопара тип К,
-					для усиления сигнала я исползовал операционный усилитель LM358.
-	2023-04-18 - Обновил код для новой версии SECU от 23.03.2023.
-					Изменен алгоритм расчета скорости, пробега и израсходованного топлива.
-					Теперь коэффициент коррекции расхода топлива можно настраивать
-					на экране разгона аналогично яркости экрана.
-	2023-08-27 - Исправил ошибки при работе с энкодером.
-					Добавил возможность сброса EEPROM при старте БК с помощью удержания
-					кнопки "Вправо".
-					При удержание кнопки "Влево" в EEPROM запишутся значения из прошивки.
-
-	ПЛАН:
-	 - Дисплей на MAX7219.
-*/
-
 // Подключение бибилиотек
 #include <U8g2lib.h>
 #include <avr/eeprom.h>
 #include <EEPROM.h>
 #include <avr/pgmspace.h>
 #include <TM1637Display.h>
+#include <avr/wdt.h>		// Сторожевой собак.
 
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // !!!!!!!!!!!!!!!!!!! ВСЕ НАСТРОЙКИ В ФАЙЛЕ Configuration.h !!!!!!!!!!!!!!!!!!
@@ -167,12 +28,12 @@
 // закомментировать и прошить.
 //#define WRITE_EEPROM_ON_START
 
-// 27.08.2023
+// 30.06.2024
 // Раскомментировать параметры, которые необходимо записать в EEPROM	 
-#define WRITE_DISTANCE_DAY 139.9
-#define WRITE_DISTANCE_ALL 22673.0
-#define WRITE_FUEL_BURNED_DAY 12.1 * 1000.0
-#define WRITE_FUEL_BURNED_ALL 1974 * 1000.0
+#define WRITE_DISTANCE_DAY 0.0
+#define WRITE_DISTANCE_ALL 27793.0
+#define WRITE_FUEL_BURNED_DAY 0.0 * 1000.0
+#define WRITE_FUEL_BURNED_ALL 2451.0 * 1000.0
 
 //#define WRITE_ENGINE_HOURS 100.0 * 3600
 
@@ -231,6 +92,10 @@ void oil_pressure_state(byte Mode = 0) {
 			}
 		}
 		return;
+	}
+
+	if (ScreenMode == 3 && OilPressureState == 16) {
+		OilPressureState = 0;
 	}
 
 	if (OilPressureState == 16) {return;}
@@ -452,13 +317,14 @@ void draw_lcd_main() { // 0
 	
     draw_map_f(43, 0);    // ДАД (F)	
 	
-    draw_trottle_f(43, 22);    // ДПДЗ / РХХ (F)	
+    //draw_trottle_f(43, 22);    // ДПДЗ / РХХ (F)
+    draw_speed_f(43, 22);
 	
     draw_afc_f(43, 44);    // Средний расход топлива суточный и общий (F)	
 	
-    draw_O2_sensor_h(86, 0);    // Напряжение УДК / AFR (H)	
-    draw_lambda_corr_h(86, 10);    // Лямбда коррекция (H)	
-    draw_airtemp_h(86, 22);    // Температура воздуха на впуске (H)	
+    draw_O2_sensor_h(86, 0, 0);    // AFR № 1 (Напряжение ADD_I1) (H)	
+    draw_lambda_corr_h(86, 10, 0);    // Лямбда коррекция № 1 (H)	
+    draw_airtemp_h(86, 22, 0);    // Температура воздуха на впуске (H)	
     draw_battery_h(86, 32);    // Напряжение сети (H)	
     draw_fuel_burned_f(86, 44);    // Израсходованное топливо (F)	
 	// ========================== Блоки данных ==========================
@@ -500,15 +366,16 @@ void draw_lcd_second() { // 0
 	
     draw_map_f(43, 0);    // ДАД (F)	
 	
-    draw_airtemp_h(43, 22);    // Температура воздуха на впуске (H)	
-    draw_angle_h(43, 32);    // Текущий УОЗ (H)	
+    draw_trottle_f(43, 22);    // ДПДЗ / РХХ (F)	
+	
     draw_fan_pwm_f(43, 44);    // Вентилятор охлаждения % ШИМ (F)	
 	
-    draw_O2_sensor_f(86, 0);    // Напряжение УДК / AFR (F)	
+    draw_O2_sensor_f(86, 0, 0);    // AFR № 1 (Напряжение ADD_I1) (F)	
 	
-    draw_inj_duty_f(86, 22);    // Загрузка форсунок (F)	
-	
-    draw_salon_temp_f(86, 44);    // Датчик температуры DS18B20 (F)	
+    draw_airtemp_h(86, 22, 0);    // Температура воздуха на впуске (H)	
+    draw_angle_h(86, 32);    // Текущий УОЗ (H)	
+    draw_battery_f(86, 44);    // Напряжение сети (F)	
+
 	// ========================== Блоки данных ==========================
 
 	// Линии разметки
@@ -670,7 +537,7 @@ void lcd_acceleration() {
 	byte Mode = 0;
 
 	// Скорость при включении экрана
-	Speed = build_speed(27 + DataShift);
+	Speed = build_speed(29);
 	// Если скорость = 0, то замер идет 0-100,
 	// в противном случае 60-100.
 	//Speed = 40;
@@ -692,7 +559,7 @@ void lcd_acceleration() {
 					if (Mode > 0) {Speed = min(Speed + 1.2, 120);}
 				}
 			#else
-				Speed = build_speed(27 + DataShift);
+				Speed = build_speed(29);
 			#endif
 
 			// Запуск измерения при скрости 0 в течение 2 сек.
@@ -935,10 +802,10 @@ void draw_screen_change() {
 //=============================================================================
 
 void draw_ff_fc_f(byte x, byte y) { // 22
-	float TPS = (float) Data[18] * 0.5;                     // 2
-	float Speed = build_speed(27 + DataShift); // 11
+	float TPS = get_tps();
+	float Speed = build_speed(29); // 11
 
-	float FF_FRQ = (float) build_unsigned_int(32 + DataShift) * 0.00390625;  // 256
+	float FF_FRQ = (float) build_unsigned_int(34) * 0.00390625;  // 256
 
 	// Мгновенный расход л/ч
 	FF_FRQ = (float) FF_FRQ * 0.225 * FuelConsumptionRatio * 0.01; // (3600 / 16000)
@@ -947,7 +814,7 @@ void draw_ff_fc_f(byte x, byte y) { // 22
 	// Режим отображения, 1 - л/ч, 2 - л/100км
 	byte Mode = 1;
 
-	if (Speed > 3 && TPS > 3) {
+	if (Speed > 3) {
 		Mode = 2; // Drive
 	}
   
@@ -1080,7 +947,7 @@ void draw_map_f(byte x, byte y) { // 12
 }
 
 void draw_map2_f(byte x, byte y) { // 12
-	float MAP = (float) build_int(56 + DataShift) * 0.015625;            // 64
+	float MAP = (float) build_int(58) * 0.015625;            // 64
 	MAP = constrain(MAP, 0, 255);
 	char CharVal[4] = {};
 	byte H = 0;
@@ -1096,7 +963,7 @@ void draw_map2_f(byte x, byte y) { // 12
 }
 
 void draw_map_diff_f(byte x, byte y) { // 13
-	float MAP = (float) build_int(56 + DataShift) * 0.015625 - (float) build_int(3) * 0.015625;    
+	float MAP = (float) build_int(58) * 0.015625 - (float) build_int(3) * 0.015625;    
 	MAP = constrain(MAP, -255, 255);
 	char CharVal[5] = {};
 	byte H = 0;
@@ -1112,7 +979,7 @@ void draw_map_diff_f(byte x, byte y) { // 13
 }
 
 void draw_temp2_f(byte x, byte y) { // 12
-	float Temp2 = (float) build_int(58 + DataShift) * 0.25;            // 4
+	float Temp2 = (float) build_int(60) * 0.25;            // 4
 	Temp2 = constrain(Temp2, -99, 255);
 	char CharVal[4] = {};
 	byte H = 0;
@@ -1127,8 +994,15 @@ void draw_temp2_f(byte x, byte y) { // 12
 	u8g2.drawXBMP(41 - 4 + x, y + 5, Cels_width, Cels_height, Cels_bits);
 }
 
-void draw_airtemp_h(byte x, byte y) { // 14
-	float AIRTEMP = (float) build_int(34 + DataShift) * 0.25;           // 4
+void draw_airtemp_h(byte x, byte y, byte Channel) {
+	byte ByteNumber = 36;
+	if (Channel == 1) {
+		ByteNumber = 101;
+		u8g2.drawPixel(x + 2, y + 2);
+		u8g2.drawPixel(x + 2, y + 4);
+	}
+
+	float AIRTEMP = (float) build_int(ByteNumber) * 0.25;           // 4
 	AIRTEMP = constrain(AIRTEMP, -99, 255);
 	byte H = 0;
 	byte L = 0;
@@ -1150,8 +1024,15 @@ void draw_airtemp_h(byte x, byte y) { // 14
 	u8g2.drawXBMP(41 - 4 + x, y + 2, Cels_width, Cels_height, Cels_bits);
 }
 
-void draw_airtemp_f(byte x, byte y) { // 12
-	float AIRTEMP = (float) build_int(34 + DataShift) * 0.25;           // 4
+void draw_airtemp_f(byte x, byte y, byte Channel) {
+	byte ByteNumber = 36;
+	if (Channel == 1) {
+		ByteNumber = 101;
+		u8g2.drawPixel(x + 2, y + 4);
+		u8g2.drawPixel(x + 2, y + 6);
+	}
+
+	float AIRTEMP = (float) build_int(ByteNumber) * 0.25;           // 4
 	AIRTEMP = constrain(AIRTEMP, -99, 255);
 	byte H = 0;
 	byte L = 0;
@@ -1172,14 +1053,14 @@ void draw_airtemp_f(byte x, byte y) { // 12
 	u8g2.drawXBMP(41 - 4 + x, y + 5, Cels_width, Cels_height, Cels_bits);
 }
 
-void draw_trottle_f(byte x, byte y) { // 18
-	float TPS = (float) Data[18] * 0.5;                     // 2
-	float IAC = (float) Data[25 + DataShift] * 0.5;                     // 2
+void draw_trottle_f(byte x, byte y) {
+	float TPS = get_tps();
+	float IAC = (float) get_byte(27) * 0.5;                     // 2
 	char CharVal[6] = {};
 	byte H = 0;
 	byte L = 0;
 
-	if (TPS > 2) {
+	if (TPS > 1) {
 		dtostrf(TPS, 5, 1, CharVal);
 		u8g2.drawXBMP(x + 2, y + 4, Trottle_width, Trottle_height, Trottle_bits);
 	}
@@ -1267,16 +1148,37 @@ void draw_afc_total_f(byte x, byte y) { // 13
 	u8g2.drawUTF8(41 - 2 - L + x, y + 11 + H/2, CharVal);
 }
 
-void draw_O2_sensor_h(byte x, byte y) { // 14
+void draw_O2_sensor_h(byte x, byte y, byte Channel) {
 	// Тип датчика кислорода, 0 - УДК, 1 - ШДК.
-	byte LambdaType;
+	byte LambdaType = 0;
 	char CharVal[5] = {};
 	byte H = 0;
 	byte L = 0;
 
-	float AFR = (float) build_int(60 + DataShift) * 0.0078125;      // 128
+	// Lambda 1
+	byte ByteNumber = 62;
+	if (Channel == 0) {
+		u8g2.drawXBMP(x + 2, y + 1, Lambda_1_S_width, Lambda_1_S_height, Lambda_1_S_bits);
+	}
+	else if (Channel == 1) {
+		// Lambda 2
+		ByteNumber = 93;
+		u8g2.drawXBMP(x + 2, y + 1, Lambda_2_S_width, Lambda_2_S_height, Lambda_2_S_bits);
+	}
+	else if (Channel == 2) {
+		// Mix
+		ByteNumber = 97;
+		u8g2.drawXBMP(x + 2, y + 1, Lambda_mix_S_width, Lambda_mix_S_height, Lambda_mix_S_bits);
+	}
+	else if (Channel == 3) {
+		// Target
+		ByteNumber = 99;
+		u8g2.drawXBMP(x + 2, y + 1, Lambda_target_S_width, Lambda_target_S_height, Lambda_target_S_bits);
+	}
+
+	float AFR = (float) build_int(ByteNumber) * 0.0078125;      // 128
 	AFR = constrain(AFR, 0, 99);
-	if (AFR > 0) {
+	if (AFR > 0 || Channel) {
 		// Если есть показания АФР, значит показывать надо АФР.
 		LambdaType = 1;
 		dtostrf(AFR, 4, 1, CharVal);
@@ -1302,7 +1204,6 @@ void draw_O2_sensor_h(byte x, byte y) { // 14
 		}
 	}
 
-	u8g2.drawXBMP(x + 2, y + 1, O2S_width, O2S_height, O2S_bits);
 	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
 	H = u8g2.getAscent();
 
@@ -1310,16 +1211,38 @@ void draw_O2_sensor_h(byte x, byte y) { // 14
 	u8g2.drawUTF8(41 - 5 - L + x, y + 9, CharVal);
 }
 
-void draw_O2_sensor_f(byte x, byte y) { // 14
+void draw_O2_sensor_f(byte x, byte y, byte Channel) {
 	// Тип датчика кислорода, 0 - УДК, 1 - ШДК.
 	byte LambdaType;
 	char CharVal[5] = {};
 	byte H = 0;
 	byte L = 0;
 
-	float AFR = (float) build_int(60 + DataShift) * 0.0078125;      // 128
+	// Lambda 1
+	byte ByteNumber = 62;
+	if (Channel == 0) {
+		u8g2.drawXBMP(x + 6, y + 15, Symbol_I_width, Symbol_I_height, Symbol_I_bits);
+
+	}
+	if (Channel == 1) {
+		// Lambda 2
+		ByteNumber = 93;
+		u8g2.drawXBMP(x + 6, y + 14, Symbol_II_width, Symbol_II_height, Symbol_II_bits);
+	}
+	else if (Channel == 2) {
+		// Mix
+		ByteNumber = 97;
+		u8g2.drawXBMP(x + 6, y + 3, Symbol_mix_width, Symbol_mix_height, Symbol_mix_bits);
+	}
+	else if (Channel == 3) {
+		// Target
+		ByteNumber = 99;
+		u8g2.drawXBMP(x + 6, y + 15, Symbol_T_width, Symbol_T_height, Symbol_T_bits);
+	}
+
+	float AFR = (float) build_int(ByteNumber) * 0.0078125;      // 128
 	AFR = constrain(AFR, 0, 99);
-	if (AFR > 0) {
+	if (AFR > 0 || Channel) {
 		// Если есть показания АФР, значит показывать надо АФР.
 		LambdaType = 1;
 		dtostrf(AFR, 4, 1, CharVal);
@@ -1345,7 +1268,7 @@ void draw_O2_sensor_f(byte x, byte y) { // 14
 		}
 	}
 
-	u8g2.drawXBMP(x + 2, y + 2, O2L_width, O2L_height, O2L_bits);
+	u8g2.drawXBMP(x + 2, y + 2, Lambda_L_width, Lambda_L_height, Lambda_L_bits);
 	u8g2.setFont(u8g2_font_helvB10_tn);
 	H = u8g2.getAscent();
 
@@ -1353,12 +1276,15 @@ void draw_O2_sensor_f(byte x, byte y) { // 14
 	u8g2.drawUTF8(41 - 2 - L + x, y + 11 + H/2, CharVal);
 }
 
-void draw_lambda_corr_h(byte x, byte y) { // 14
+void draw_lambda_corr_h(byte x, byte y, byte Channel) {
 	char CharVal[6] = {};
 	byte H = 0;
 	byte L = 0;
 
-	float AFR_CORR = (float) build_int(50 + DataShift) * 0.1953125; // 5.12
+	byte ByteNumber = 52;
+	if (Channel == 1) {ByteNumber = 95;}
+
+	float AFR_CORR = (float) build_int(ByteNumber) * 0.1953125; // 5.12
 	AFR_CORR = constrain(AFR_CORR, -99, 255);
 	if (AlarmBoxState > 0) {
 		if (AFR_CORR < LAMBDA_CORR_MIN || AFR_CORR > LAMBDA_CORR_MAX) {
@@ -1379,12 +1305,15 @@ void draw_lambda_corr_h(byte x, byte y) { // 14
 	u8g2.drawUTF8(41 - 5 - L + x, y + 9, CharVal);
 }
 
-void draw_lambda_corr_f(byte x, byte y) { // 14
+void draw_lambda_corr_f(byte x, byte y, byte Channel) {
 	char CharVal[6] = {};
 	byte H = 0;
 	byte L = 0;
 
-	float AFR_CORR = (float) build_int(50 + DataShift) * 0.1953125; // 5.12
+	byte ByteNumber = 52;
+	if (Channel == 1) {ByteNumber = 95;}
+
+	float AFR_CORR = (float) build_int(ByteNumber) * 0.1953125; // 5.12
 	AFR_CORR = constrain(AFR_CORR, -99, 255);
 	if (AlarmBoxState > 0) {
 		if (AFR_CORR < LAMBDA_CORR_MIN || AFR_CORR > LAMBDA_CORR_MAX) {
@@ -1401,6 +1330,80 @@ void draw_lambda_corr_f(byte x, byte y) { // 14
 		CharVal[0] = '+';
 	}
 
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 2 - L + x, y + 11 + H/2, CharVal);
+}
+
+void draw_afr_hit_h(byte x, byte y, byte Channel) {
+	char CharVal[6] = {};
+	byte H = 0;
+	byte L = 0;
+
+	// Lambda 1
+	byte ByteNumber = 62;
+	if (Channel == 0) {
+		u8g2.drawXBMP(x + 2, y + 1, AfrHit_1_S_width, AfrHit_1_S_height, AfrHit_1_S_bits);
+	}
+	if (Channel == 1) {
+		// Lambda 2
+		ByteNumber = 93;
+		u8g2.drawXBMP(x + 2, y + 1, AfrHit_2_S_width, AfrHit_2_S_height, AfrHit_2_S_bits);
+	}
+	else if (Channel == 2) {
+		// Mix
+		ByteNumber = 97;
+		u8g2.drawXBMP(x + 2, y + 1, AfrHit_mix_S_width, AfrHit_mix_S_height, AfrHit_mix_S_bits);
+	}
+	float CurrAFR = (float) build_int(ByteNumber) * 0.0078125;  // 128
+	float TargetAFR = (float) build_int(99) * 0.0078125;      	// 128
+
+	float AfrHit = 0;
+	if (CurrAFR > 1 && TargetAFR > 1) {
+		AfrHit = TargetAFR / CurrAFR * 100;
+	}
+	AfrHit = constrain(AfrHit, 0, 199);
+
+	u8g2.setFont(u8g2_font_haxrcorp4089_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(AfrHit, 5, 1, CharVal);
+	L = u8g2.getUTF8Width(CharVal);
+	u8g2.drawUTF8(41 - 3 - L + x, y + 9, CharVal);
+}
+
+void draw_afr_hit_f(byte x, byte y, byte Channel) {
+	char CharVal[4] = {};
+	byte H = 0;
+	byte L = 0;
+
+	// Lambda 1
+	byte ByteNumber = 62;
+	if (Channel == 0) {
+		u8g2.drawXBMP(x + 2, y + 3, AfrHit_1_L_width, AfrHit_1_L_height, AfrHit_1_L_bits);
+	}
+	if (Channel == 1) {
+		// Lambda 2
+		ByteNumber = 93;
+		u8g2.drawXBMP(x + 2, y + 3, AfrHit_2_L_width, AfrHit_2_L_height, AfrHit_2_L_bits);
+	}
+	else if (Channel == 2) {
+		// Mix
+		ByteNumber = 97;
+		u8g2.drawXBMP(x + 2, y + 3, AfrHit_mix_L_width, AfrHit_mix_L_height, AfrHit_mix_L_bits);
+	}
+	float CurrAFR = (float) build_int(ByteNumber) * 0.0078125;  // 128
+	float TargetAFR = (float) build_int(99) * 0.0078125;      	// 128
+
+	float AfrHit = 0;
+	if (CurrAFR > 1 && TargetAFR > 1) {
+		AfrHit = TargetAFR / CurrAFR * 100;
+	}
+	AfrHit = constrain(AfrHit, 0, 199);
+
+	u8g2.setFont(u8g2_font_helvB12_tn);
+	H = u8g2.getAscent();
+
+	dtostrf(AfrHit, 3, 0, CharVal);
 	L = u8g2.getUTF8Width(CharVal);
 	u8g2.drawUTF8(41 - 2 - L + x, y + 11 + H/2, CharVal);
 }
@@ -1493,8 +1496,8 @@ void draw_fuel_burned_f(byte x, byte y) { // 10
 	u8g2.drawUTF8(41 - 1 - L + x, y + H * 2 + 5, CharVal);
 }
 
-void draw_speed_f(byte x, byte y) { // 16
-	float Speed =  build_speed(27 + DataShift);
+void draw_speed_f(byte x, byte y) {
+	float Speed =  build_speed(29);
 	float DDANGLE = (float) build_int(13) * 0.03125;
 	char CharVal[4] = {};
 	byte H = 0;
@@ -1606,7 +1609,7 @@ void draw_oil_pressure_f(byte x, byte y) { // 12
 }
 
 void draw_inj_duty_f(byte x, byte y) { // 12
-	float InjDuty = Data[81] * 0.5; // 2
+	float InjDuty = get_byte(81) * 0.5; // 2
 	char CharVal[4] = {};
 	byte H = 0;
 	byte L = 0;
@@ -1621,7 +1624,7 @@ void draw_inj_duty_f(byte x, byte y) { // 12
 }
 
 void draw_air_map_index_f(byte x, byte y) { // 8
-	byte MapIndex = Data[15];
+	byte MapIndex = get_byte(15);
 	constrain(MapIndex, 0, 99);
 	char CharVal[3] = {};
 	byte H = 0;
@@ -1653,7 +1656,7 @@ void draw_engine_hours_f(byte x, byte y) { // 13
 }
 
 void draw_fan_pwm_f(byte x, byte y) {
-	byte FanPWM = Data[84] / 2;
+	byte FanPWM = get_byte(84) / 2;
 	char CharVal[4] = {};
 	byte H = 0;
 	byte L = 0;
@@ -1726,11 +1729,11 @@ void draw_tm1637() { // 3
 		Display7S.showNumberDec(Value, false);
 	}
 	else if (DataType == 2) {
-		int Value = build_int(60 + DataShift) * 0.078125; // 2 - AFR
+		int Value = build_int(62) * 0.078125; // 2 - AFR
 		Display7S.showNumberDecEx(Value, 0x80 >> 2, false);
 	}
 	else if (DataType == 3) {
-		int Value = Data[81] * 0.5; // 3 - Загрузка форсунок
+		int Value = get_byte(81) * 0.5; // 3 - Загрузка форсунок
 		Display7S.showNumberDec(Value, false);
 	}
 	else if (DataType == 4) {
@@ -1738,7 +1741,7 @@ void draw_tm1637() { // 3
 		Display7S.showNumberDec(Value, false);
 	}
 	else if (DataType == 5) {
-		int Value =  build_speed(27 + DataShift); // 5 - Скорость
+		int Value =  build_speed(29); // 5 - Скорость
 		Display7S.showNumberDec(Value, false);
 	}
 }
@@ -1872,9 +1875,10 @@ void get_data_size() {
 	byte StopFlag = 0;
 	StopTimer = millis();
 
-
 	// Должно быть 5 пакетов одинаковой длины подряд
 	while (Count < 5) {
+		wdt_reset();
+
 		// Если нет данных более 3-х секунд,
 		// выводим на экран сообщение
 		if (StopFlag == 0 && millis() - StopTimer > 3000) {
@@ -1923,8 +1927,6 @@ void get_data_size() {
 		}
 	}
 
-	if (DataSize >= 74) {DataShift = 2;}
-
 	// Ждем первый пакет данных
 	while (DataOk == 0) {
 		receive_data();
@@ -1937,13 +1939,14 @@ void get_data_size() {
 			StopFlag = 1;
 		}
 	}
+
 	// Для SECU версии от 23.03.2023 изменен порядок расчета
 	// скорости, пробега и израсходованного топлива.
 	if (DataSize > 91) {
-		FuelDelta = -1 * build_fuel(88 + DataShift);
+		FuelDelta = -1 * build_fuel(90);
 	}
 	// Обнуление пробега, если БК перезапустился при работающей SECU.
-	DistDelta = -1 * build_distance(29 + DataShift);
+	DistDelta = -1 * build_distance(31);
 }
 
 void draw_no_signal() {
@@ -1986,10 +1989,16 @@ void receive_data() {
 							uint8_t packet_crc[] = {0x0, 0x0};
 
 							for (byte i = 1; i <= (DataSize - 2); i++ ) {
-								packet_crc[0] += Data[i];
+								packet_crc[0] += BKData[i];
 								packet_crc[1] += packet_crc[0];
 							}
-							if (packet_crc[0] == Data[DataSize] && packet_crc[1] == Data[DataSize - 1]) {
+
+							if (DataSize > 105) {
+								packet_crc[0] += DataSize - 2;
+								packet_crc[1] += packet_crc[0];								
+							}
+
+							if (packet_crc[0] == BKData[DataSize] && packet_crc[1] == BKData[DataSize - 1]) {
 								DataOk = 1;
 							}
 							else {
@@ -2013,7 +2022,7 @@ void receive_data() {
 						data_clear();
 						break;
 					}
-					Data[N] = read_buff(IncomingByte);
+					BKData[N] = read_buff(IncomingByte);
 				}
 			}
 		}
@@ -2023,44 +2032,65 @@ void receive_data() {
 // Отчистка массива данных
 void data_clear() {
 	for (byte i = 0; i <= DataSize; i++) {
-		Data[i] = 0;
+		BKData[i] = 0;
 	}
+}
+
+byte get_index(byte i) {
+	if (DataSize < 74 && i >= 27) {i -= 2;}
+	if (DataSize > 105 && i >= 19) {i += 1;}
+	return i;
+}
+
+byte get_byte(byte i) {
+	return BKData[get_index(i)];
 }
 
 // Сборка int из двух байт
 int build_int(byte i) { // 4
+	i = get_index(i);
+
 	// Для незадействованных параметров
-	if (Data[i + 1] == 0xff) {
-		if (Data[i] == 0x7f || Data[i] == 0xff) {
-			return 0;
-		}
+	if (BKData[i + 1] == 0xff) {
+		if (BKData[i] == 0x7f || BKData[i] == 0xff) {return 0;}
 	}
 	
 	int Value = 0;
 	byte *pValue = (byte*)&Value;
-	*pValue = Data[i + 1];  
-	*(pValue + 1) = Data[i];
+	*pValue = BKData[i + 1];  
+	*(pValue + 1) = BKData[i];
 	return Value;
 }
 
 // Сборка unsigned int из двух байт
 unsigned int build_unsigned_int(byte i) { 
+	i = get_index(i);
+
 	unsigned int Value = 0;
 	byte *pValue = (byte*)&Value;
-	*pValue = Data[i + 1];  
-	*(pValue + 1) = Data[i];
+	*pValue = BKData[i + 1];  
+	*(pValue + 1) = BKData[i];
 	return Value;
 }
 
+float get_tps() {
+	float TPS = 0;
+	if (DataSize > 105) {TPS = (float) build_unsigned_int(18) * 0.015625;}	// 64
+	else {TPS = (float) get_byte(18) * 0.5;}	// 2
+	return TPS;
+}
+
 // Расчет скорости ТС
-float build_speed(byte i) { // 11
+float build_speed(byte i) {
+	i = get_index(i);
+
 	// Коэффициент для вычисления скорости и дистанции
 	#define M_PERIOD_DISTANCE 1000.0 / SPEED_SENSOR_COUNT
 
 	unsigned int Value = 0;
 	byte* pValue = (byte*)&Value;
-	*pValue = Data[i + 1];  
-	*(pValue + 1) = Data[i];
+	*pValue = BKData[i + 1];  
+	*(pValue + 1) = BKData[i];
 
 	float Speed = 0.0;
 	// Для SECU версии от 23.03.2023 изменен порядок расчета
@@ -2077,45 +2107,61 @@ float build_speed(byte i) { // 11
 }
 
 // Расчет пройденного пути
-float build_distance(byte i) { // 9
+float build_distance(byte i) {
+	i = get_index(i);
+
 	unsigned long Value = 0;
 	byte* pValue = (byte*)&Value;
-	*pValue = Data[i + 2]; 
-	*(pValue + 1) = Data[i + 1];
-	*(pValue + 2) = Data[i];
+	*pValue = BKData[i + 2]; 
+	*(pValue + 1) = BKData[i + 1];
+	*(pValue + 2) = BKData[i];
 
 	float DistTmp = 0.0;
 	// Для SECU версии от 23.03.2023 изменер порядок расчета
 	// скорости, пробега и израсходованного топлива.
 	if (DataSize > 91) {DistTmp = (float) Value / 125;}
 	else {DistTmp = (float) (M_PERIOD_DISTANCE * Value) * 0.001;}
+
+	// Если значение внезапно сильно изменилось, значит в менеджере сбросили счетчик
+	// и надо обновить дельту.
+	if (fabs(DistTmp + DistDelta - DIST) > 1.0) {
+		DistDelta = -1 * DistTmp + DIST;
+	}
 	return DistTmp + DistDelta;
 }
 
 // Расчет израсходованного топлива
 float build_fuel(byte i) {
+	i = get_index(i);
+
 	unsigned long Value = 0;
 	byte* pValue = (byte*)&Value;
-	*pValue = Data[i + 2]; 
-	*(pValue + 1) = Data[i + 1];
-	*(pValue + 2) = Data[i];
+	*pValue = BKData[i + 2]; 
+	*(pValue + 1) = BKData[i + 1];
+	*(pValue + 2) = BKData[i];
 
 	float Fuel = (float) Value * 0.9765625 * FuelConsumptionRatio * 0.01;
+
+	// Если значение внезапно сильно изменилось, значит в менеджере сбросили счетчик
+	// и надо обновить дельту (топливо в мл).
+	if (fabs(Fuel + FuelDelta - FuelBurnedRide) > 300.0) {
+		FuelDelta = -1 * Fuel + FuelBurnedRide;
+	}
 	return Fuel + FuelDelta;
 }
 
 // Сборка некоторых данных из байтов от SECU
-void build_data() { // 12
+void build_data() {
 	if (DataOk) {
 		if (FuelTimer == 0) {FuelTimer = millis();}
 		else if (millis() - FuelTimer >= 500) {
-			DIST = build_distance(29 + DataShift);
+			DIST = build_distance(31);
 			// Расчет израсходованного топлива за интервал
 			if (DataSize > 91) {
-				FuelBurnedRide = build_fuel(88 + DataShift);
+				FuelBurnedRide = build_fuel(90);
 			}
 			else {
-				float FF_FRQ = (float) build_unsigned_int(32 + DataShift) * 0.00390625;  // 256
+				float FF_FRQ = (float) build_unsigned_int(34) * 0.00390625;  // 256
 				// Усредненый мгновенный расход в мл/ч
 				float FFAVG = (float) (PrevFF_FRQ + FF_FRQ) * 112.5; // (3600 / 16) / 2
 				FuelBurnedRide += (float) ((FFAVG * (millis() - FuelTimer)) / 3600000.0) * FuelConsumptionRatio * 0.01;
@@ -2167,10 +2213,10 @@ void check_ce_errors() { // 5
 	// Собираем все байты CE в один кусок
 	uint32_t CE = 0;
 	byte *pValue = (byte*)&CE;
-	*pValue = Data[26];  
-	*(pValue + 1) = Data[25];
-	*(pValue + 2) = Data[24];
-	*(pValue + 3) = Data[23];
+	*pValue = BKData[26];  
+	*(pValue + 1) = BKData[25];
+	*(pValue + 2) = BKData[24];
+	*(pValue + 3) = BKData[23];
 
 	//StatusCE = 0;
 	for (byte i = 0; i < BitsCount; i++ ) {
@@ -2277,7 +2323,7 @@ void encoder_update() { // 2
 #ifdef SPEED_CHIME_PIN
 void speed_chime() { // 4
 	float Speed = 0.0;
-	Speed = build_speed(27 + DataShift);
+	Speed = build_speed(29);
 
 	//Speed = 101;
 
@@ -2433,6 +2479,7 @@ void power_off() {
 	// Этот кусок на тот случай, если выключить зажигания и сразу включить обратно
 	while (!digitalRead(INT_IGN_PIN)) {
 		delay(250);
+		wdt_reset();
 	}
 
 	// Перезапускаем код БК
@@ -2652,6 +2699,8 @@ void button_action() {
 //=============================================================================
 // Инициализация при включении 
 void setup() { // 0
+	wdt_enable(WDTO_8S);	// Сторожевой собак на 8с.
+
 	Serial.begin(SERIAL_PORT_SPEED);
 
 	// Вход для проверки состояния замка зажигания
@@ -2711,7 +2760,7 @@ void setup() { // 0
 	// Считываем данные из EEPROM
 	read_eeprom();
 
-	// Запись значений пробега и расхода при зажатой кнопке "Влево"
+	// Запись значений пробега и расхода из прошивки при зажатой кнопке "Влево"
 	#ifndef ENCODER_CONTROL
 		if (!digitalRead(BUTTON_LEFT_PIN)) {
 			write_eeprom(1);
@@ -2764,13 +2813,14 @@ void setup() { // 0
 
 // Вспомогательный цикл
 void loop_2() { // 0
+	wdt_reset();			// Сброс сторожевого таймера.
 	// Проверка ДАДМ
 	oil_pressure_state(0);
 
 	// Считывание и усреднение показаний EGT
 	#ifdef EGT_SENSOR_PIN
 		int Value = analogRead(EGT_SENSOR_PIN);
-		
+
 		#ifndef EGT_SENSOR_RAW_VALUE
 			Value = (float) (EGT_SENSOR_KF_A * Value + EGT_SENSOR_KF_B);
 		#endif
@@ -2796,7 +2846,7 @@ void loop_2() { // 0
 		}
 	#endif
 
-	// Выполнение действий кнопо
+	// Выполнение действий кнопок
 	button_action();
 
 	#ifndef DEBUG_MODE
